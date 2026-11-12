@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="資産管理">
+<meta name="theme-color" content="#0e1013">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>資産管理</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+<style>
+:root{--bg:#0e1013;--card:#171a1f;--card2:#1e2228;--line:#2a2f37;--tx:#eceef1;--sub:#9aa1ab;--acc:#4f8cff;--pos:#3fcf8e;--neg:#ff6b6b;--r:14px}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:15px}
+header{position:sticky;top:0;z-index:5;background:rgba(14,16,19,.92);backdrop-filter:blur(10px);padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+header h1{font-size:17px;margin:0}
+header .upd{font-size:11px;color:var(--sub)}
+.iconbtn{background:var(--card2);border:1px solid var(--line);color:var(--tx);border-radius:10px;padding:7px 11px;font-size:13px}
+main{padding:12px 12px calc(env(safe-area-inset-bottom) + 84px);max-width:720px;margin:0 auto}
+section{display:none}section.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 10px;font-size:14px;color:var(--sub);font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.lbl{font-size:12px;color:var(--sub)}
+.big{font-size:30px;font-weight:700;letter-spacing:.3px;margin:2px 0 6px;font-variant-numeric:tabular-nums}
+.mid{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.sub{font-size:13px;color:var(--sub);margin-top:2px}
+.pos{color:var(--pos)}.neg{color:var(--neg)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid2 .card{margin:0}
+.num{font-variant-numeric:tabular-nums}
+.alloc{display:flex;gap:14px;align-items:center}
+.alloc .cv{width:120px;height:120px;flex:none}
+.legend{flex:1;min-width:0}
+.legend div{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;gap:6px;white-space:nowrap}
+.dot{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:6px}
+.seg{display:flex;gap:4px;background:var(--card2);padding:3px;border-radius:9px}
+.seg button{background:none;border:0;color:var(--sub);padding:4px 9px;border-radius:7px;font-size:12px}
+.seg button.on{background:var(--line);color:var(--tx)}
+.hcv{height:200px}
+.row{display:flex;justify-content:space-between;align-items:center;padding:11px 2px;border-top:1px solid var(--line);gap:10px}
+.row:first-of-type{border-top:0}
+.row .l{min-width:0}
+.row .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .meta{font-size:12px;color:var(--sub);margin-top:2px}
+.row .r{text-align:right;flex:none}
+.badge{font-size:10px;border:1px solid var(--line);border-radius:6px;padding:1px 5px;margin-left:4px;color:var(--sub);vertical-align:1px}
+.btn{background:var(--acc);color:#fff;border:0;border-radius:11px;padding:11px 14px;font-size:15px;font-weight:600;width:100%}
+.btn.ghost{background:var(--card2);color:var(--tx);border:1px solid var(--line)}
+.btn.danger{background:transparent;color:var(--neg);border:1px solid #5a2a2a}
+.btn.sm{width:auto;padding:6px 12px;font-size:13px;border-radius:9px}
+.btn:disabled{opacity:.5}
+.bar{height:10px;background:var(--card2);border-radius:6px;overflow:hidden;margin:8px 0}
+.bar>i{display:block;height:100%;background:linear-gradient(90deg,#4f8cff,#3fcf8e)}
+nav{position:fixed;bottom:0;left:0;right:0;z-index:5;background:rgba(18,20,24,.96);backdrop-filter:blur(10px);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;background:none;border:0;color:var(--sub);padding:9px 0 8px;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:3px}
+nav button svg{width:22px;height:22px}
+nav button.on{color:var(--acc)}
+dialog{background:var(--card);color:var(--tx);border:1px solid var(--line);border-radius:18px;width:min(560px,94vw);max-height:88vh;padding:0}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+.dlg-h{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card);z-index:1}
+.dlg-h b{font-size:16px}
+.dlg-b{padding:14px 16px 18px}
+.f{margin-bottom:12px}
+.f label{display:block;font-size:12px;color:var(--sub);margin-bottom:5px}
+.f input,.f select,.f textarea{width:100%;background:var(--card2);border:1px solid var(--line);color:var(--tx);border-radius:10px;padding:10px 11px;font-size:16px;font-family:inherit}
+.f .hint{font-size:11px;color:var(--sub);margin-top:4px}
+.f2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 80px);transform:translateX(-50%);background:#2b3240;color:#fff;padding:10px 16px;border-radius:12px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:20;max-width:90vw}
+.toast.on{opacity:1}
+.empty{color:var(--sub);text-align:center;padding:18px 0;font-size:13px}
+.demo{background:#2a2410;border:1px solid #5c4c14;color:#f1d27a;font-size:12px;border-radius:10px;padding:8px 10px;margin-bottom:12px}
+.kv{display:flex;justify-content:space-between;padding:6px 0;font-size:14px}
+.kv span:first-child{color:var(--sub)}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--sub);border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1 id="title">ホーム</h1><div class="upd" id="upd"></div></div>
+  <button class="iconbtn" id="btnRefresh">株価更新</button>
+</header>
+
+<main>
+  <div class="demo" id="demoBar" hidden>デモデータを表示中です。「設定」でApps ScriptのURLとトークンを入れると自分のデータになります。</div>
+  <section id="v-home" class="on"></section>
+  <section id="v-hold"></section>
+  <section id="v-div"></section>
+  <section id="v-fire"></section>
+  <section id="v-set"></section>
+</main>
+
+<nav id="nav">
+  <button data-v="home" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>ホーム</button>
+  <button data-v="hold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>保有</button>
+  <button data-v="div"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9 8l3 4 3-4M12 12v5M9 13h6M9 15.5h6"/></svg>配当</button>
+  <button data-v="fire"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z"/></svg>FIRE</button>
+  <button data-v="set"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>設定</button>
+</nav>
+
+<dialog id="dlg"><div class="dlg-h"><b id="dlgTitle"></b><button class="iconbtn" id="dlgClose">閉じる</button></div><div class="dlg-b" id="dlgBody"></div></dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===== 定数 ===== */
+const CAT = {
+  jp:{label:'日本株',color:'#e5484d'}, us:{label:'米国株',color:'#4f8cff'}, hk:{label:'中国株',color:'#f76b15'},
+  fund:{label:'投資信託',color:'#30a46c'}, crypto:{label:'暗号資産',color:'#a26ee0'}, gold:{label:'金',color:'#d6a700'},
+  cash:{label:'現金・預金',color:'#8b8d98'}, other:{label:'その他',color:'#12a594'}
+};
+const ACCOUNTS = ['特定','一般','NISA成長','NISAつみたて','iDeCo','その他'];
+const DEF_CUR = {jp:'JPY',us:'USD',hk:'HKD',fund:'JPY',crypto:'JPY',gold:'JPY',cash:'JPY',other:'JPY'};
+const CUR_SYM = {JPY:'¥',USD:'$',HKD:'HK$'};
+const TITLES = {home:'ホーム',hold:'保有資産',div:'配当',fire:'FIRE',set:'設定'};
+const LS_CFG='am_cfg', LS_CACHE='am_cache', LS_DEMO='am_demo';
+
+/* ===== ユーティリティ ===== */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = v => { const n = parseFloat(String(v ?? '').replace(/,/g,'')); return isFinite(n) ? n : 0; };
+const yen = v => '¥' + Math.round(v).toLocaleString('ja-JP');
+const syen = v => (v >= 0 ? '+' : '−') + '¥' + Math.round(Math.abs(v)).toLocaleString('ja-JP');
+const man = v => Math.abs(v) >= 1e8 ? (v/1e8).toFixed(2) + '億円' : (v/1e4).toLocaleString('ja-JP',{maximumFractionDigits:0}) + '万円';
+const pct = (v,d=1) => (v >= 0 ? '+' : '') + (v*100).toFixed(d) + '%';
+const cls = v => v >= 0 ? 'pos' : 'neg';
+const fmtN = (v,d=2) => num(v).toLocaleString('ja-JP',{maximumFractionDigits:d});
+const todayStr = () => { const d = new Date(Date.now() + 9*3600e3); return d.toISOString().slice(0,10); };
+const lsGet = (k,def) => { try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch(e) { return def; } };
+const lsSet = (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} };
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),2600); }
+
+/* ===== 状態 ===== */
+let cfg = lsGet(LS_CFG, {apiUrl:'', token:''});
+let D = {holdings:[], dividends:[], history:[], settings:{}, fx:{JPY:1,USD:150,HKD:19}, updated:''};
+let view = 'home', homeRange = '1Y';
+const charts = {};
+const isDemo = () => !cfg.apiUrl;
+
+/* ===== 計算 ===== */
+function netRatio(h){
+  const free = /^(NISA|iDeCo)/.test(h.account || '');
+  const foreign = h.type === 'us' || h.type === 'hk';
+  return (foreign ? 0.9 : 1) * (free ? 1 : (1 - 0.20315));
+}
+function calc(h, fx = D.fx){
+  const cur = h.currency || DEF_CUR[h.type] || 'JPY';
+  const rate = cur === 'JPY' ? 1 : (num(fx[cur]) || 0);
+  const div = h.type === 'fund' ? 10000 : 1;
+  const q = num(h.qty);
+  const price = h.type === 'cash' ? 1 : num(h.price);
+  const value = q * price / div * rate;
+  const cp = h.type === 'cash' ? 1 : num(h.cost);
+  const cfx = cur === 'JPY' ? 1 : (num(h.costFx) || rate);
+  const cost = cp > 0 ? q * cp / div * cfx : value;
+  const prev = num(h.prevClose);
+  const day = (prev > 0 && h.type !== 'cash') ? q * (price - prev) / div * rate : 0;
+  const divAnnual = q * num(h.dps) / div * rate;
+  return {cur, rate, price, value, cost, pl: value - cost, plr: cost > 0 ? (value - cost) / cost : 0, day, divAnnual, divNet: divAnnual * netRatio(h)};
+}
+function summary(){
+  const s = {total:0, cost:0, day:0, div:0, divNet:0, cat:{}, items:[]};
+  Object.keys(CAT).forEach(k => s.cat[k] = {value:0, cost:0, items:[]});
+  D.holdings.forEach(h => {
+    const c = calc(h); const k = CAT[h.type] ? h.type : 'other';
+    const it = {h, ...c};
+    s.items.push(it); s.cat[k].items.push(it); s.cat[k].value += c.value; s.cat[k].cost += c.cost;
+    s.total += c.value; s.cost += c.cost; s.day += c.day; s.div += c.divAnnual; s.divNet += c.divNet;
+  });
+  s.pl = s.total - s.cost; s.plr = s.cost > 0 ? s.pl / s.cost : 0;
+  return s;
+}
+function fireCalc(total, divNet){
+  const st = D.settings || {};
+  const expense = num(st.expense), wr = num(st.withdrawRate) || 4;
+  const target = num(st.target) || (expense > 0 ? expense / (wr/100) : 0);
+  const monthly = num(st.monthly), ret = num(st.returnRate) / 100, age = num(st.age);
+  const r = Math.pow(1 + ret, 1/12) - 1;
+  let a = total, reachM = total >= target && target > 0 ? 0 : -1;
+  const yearly = [total];
+  for (let m = 1; m <= 600; m++) {
+    a = a * (1 + r) + monthly;
+    if (reachM < 0 && target > 0 && a >= target) reachM = m;
+    if (m % 12 === 0) yearly.push(a);
+  }
+  return {expense, wr, target, monthly, ret, age, reachM, yearly, progress: target > 0 ? total / target : 0, divCover: expense > 0 ? divNet / expense : 0};
+}
+
+/* ===== API ===== */
+async function api(action, data){
+  if (isDemo()) return demoCall(action, data);
+  const res = await fetch(cfg.apiUrl, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action, token: cfg.token, data})});
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error || 'エラー');
+  return j;
+}
+async function run(action, data, okMsg){
+  try {
+    const j = await api(action, data);
+    setData(j);
+    if (okMsg) toast(okMsg);
+    return true;
+  } catch(e) { toast('失敗：' + e.message); return false; }
+}
+function setData(j){
+  D = {holdings:j.holdings||[], dividends:j.dividends||[], history:j.history||[], settings:j.settings||{}, fx:Object.assign({JPY:1}, j.fx||{}), goldPerGram:j.goldPerGram||0, updated:j.updated||''};
+  if (!isDemo()) lsSet(LS_CACHE, D);
+  renderAll();
+}
+
+/* ===== デモ ===== */
+function demoSeed(){
+  const fx = {JPY:1, USD:152.4, HKD:19.6};
+  const H = [
+    {id:'d1',type:'jp',code:'7203',name:'トヨタ自動車',account:'NISA成長',qty:200,cost:2480,dps:95,price:2915,prevClose:2890},
+    {id:'d2',type:'jp',code:'8058',name:'三菱商事',account:'特定',qty:300,cost:2620,dps:110,price:3310,prevClose:3335},
+    {id:'d3',type:'jp',code:'9432',name:'NTT',account:'NISA成長',qty:3000,cost:150,dps:5.3,price:154.5,prevClose:153.9},
+    {id:'d4',type:'us',code:'VOO',name:'Vanguard S&P 500 ETF',account:'特定',qty:12,cost:455,currency:'USD',costFx:148,dps:6.9,price:562,prevClose:558},
+    {id:'d5',type:'hk',code:'0700',name:'騰訊控股',account:'特定',qty:100,cost:385,currency:'HKD',costFx:18.9,dps:4.5,price:521,prevClose:526},
+    {id:'d6',type:'fund',code:'',name:'eMAXIS Slim 全世界株式',account:'NISAつみたて',qty:1600000,cost:21000,manualPrice:31850,price:31850},
+    {id:'d7',type:'crypto',code:'BTC',name:'ビットコイン',account:'その他',qty:0.05,cost:9200000,price:15200000,prevClose:15050000},
+    {id:'d8',type:'gold',code:'',name:'純金積立',account:'その他',qty:80,cost:12800,price:19800},
+    {id:'d9',type:'cash',code:'',name:'普通預金',account:'その他',qty:2800000},
+  ].map(h => Object.assign({currency:DEF_CUR[h.type], costFx:'', dps:'', manualPrice:'', prevClose:'', priceUpdated:'', memo:''}, h));
+  const total = H.reduce((a,h) => a + calc(h, fx).value, 0);
+  const cost = H.reduce((a,h) => a + calc(h, fx).cost, 0);
+  const hist = []; let v = total; let c = cost;
+  for (let i = 0; i < 400; i++) {
+    const d = new Date(Date.now() + 9*3600e3 - i*86400e3);
+    hist.unshift({date: d.toISOString().slice(0,10), total: Math.round(v), cost: Math.round(c)});
+    v = v / (1 + (Math.random() - 0.47) * 0.016) - (i % 30 === 0 ? 100000 : 0);
+    if (i % 30 === 0) c -= 100000;
+  }
+  const y = new Date().getFullYear();
+  const dv = [
+    [`${y}-03-10`,'8058','三菱商事',13200,'特定'],[`${y}-06-02`,'7203','トヨタ自動車',9000,'NISA成長'],[`${y}-06-27`,'8058','三菱商事',13200,'特定'],
+    [`${y}-07-01`,'9432','NTT',7800,'NISA成長'],[`${y}-09-30`,'VOO','Vanguard S&P 500 ETF',2400,'特定'],[`${y}-11-28`,'7203','トヨタ自動車',9500,'NISA成長'],
+    [`${y-1}-06-05`,'7203','トヨタ自動車',8000,'NISA成長'],[`${y-1}-06-28`,'8058','三菱商事',10500,'特定'],[`${y-1}-12-01`,'7203','トヨタ自動車',9000,'NISA成長'],
+  ].map((r,i) => ({id:'v'+i, date:r[0], code:r[1], name:r[2], amount:r[3], account:r[4], memo:''}));
+  return {holdings:H, dividends:dv, history:hist, settings:{expense:3000000, withdrawRate:4, target:'', monthly:100000, returnRate:5, age:35}, fx, updated:'デモ'};
+}
+function demoSnapshot(s){
+  const row = {date: todayStr(), total:0, cost:0};
+  s.holdings.forEach(h => { const c = calc(h, s.fx); row.total += c.value; row.cost += c.cost; });
+  row.total = Math.round(row.total); row.cost = Math.round(row.cost);
+  const i = s.history.findIndex(r => r.date === row.date);
+  if (i >= 0) s.history[i] = row; else s.history.push(row);
+}
+function demoCall(action, d){
+  const s = lsGet(LS_DEMO, null) || demoSeed();
+  const id = () => Math.random().toString(36).slice(2,10);
+  switch (action) {
+    case 'saveHolding': {
+      const i = s.holdings.findIndex(h => h.id === d.id);
+      const old = i >= 0 ? s.holdings[i] : {};
+      const h = Object.assign({}, old, d, {id: d.id || id()});
+      if (num(h.manualPrice) > 0) h.price = num(h.manualPrice);
+      if (!num(h.price)) h.price = num(h.cost) || 1;
+      if (i >= 0) s.holdings[i] = h; else s.holdings.push(h);
+      demoSnapshot(s); break;
+    }
+    case 'deleteHolding': s.holdings = s.holdings.filter(h => h.id !== d.id); demoSnapshot(s); break;
+    case 'saveDividend': {
+      const i = s.dividends.findIndex(x => x.id === d.id);
+      const o = Object.assign({}, d, {id: d.id || id(), amount: num(d.amount)});
+      if (i >= 0) s.dividends[i] = o; else s.dividends.push(o);
+      break;
+    }
+    case 'deleteDividend': s.dividends = s.dividends.filter(x => x.id !== d.id); break;
+    case 'saveSettings': Object.assign(s.settings, d); break;
+    case 'refresh':
+      s.holdings.forEach(h => { if (h.type === 'cash' || num(h.manualPrice) > 0) return; h.prevClose = h.price; h.price = Math.round(num(h.price) * (1 + (Math.random() - 0.48) * 0.03) * 100) / 100; });
+      s.updated = 'デモ ' + new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+      demoSnapshot(s); break;
+  }
+  lsSet(LS_DEMO, s);
+  return Promise.resolve(JSON.parse(JSON.stringify(Object.assign({ok:true}, s))));
+}
+
+/* ===== チャート ===== */
+Chart.defaults.color = '#9aa1ab';
+Chart.defaults.borderColor = '#2a2f37';
+Chart.defaults.font.family = '-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif';
+function mkChart(id, config){
+  if (charts[id]) charts[id].destroy();
+  const el = document.getElementById(id);
+  if (!el) return;
+  charts[id] = new Chart(el, config);
+}
+const yAxisMan = {ticks:{callback: v => man(v)}, grid:{color:'#22262d'}};
+
+/* ===== 描画 ===== */
+function renderAll(){
+  $('#demoBar').hidden = !isDemo();
+  $('#upd').textContent = D.updated ? '価格更新 ' + D.updated : '';
+  renderHome(); renderHold(); renderDiv(); renderFire(); renderSet();
+}
+
+function renderHome(){
+  const s = summary(), f = fireCalc(s.total, s.divNet);
+  const cats = Object.keys(CAT).filter(k => s.cat[k].value > 0).sort((a,b) => s.cat[b].value - s.cat[a].value);
+  let dayTxt = '';
+  if (s.day !== 0) dayTxt = `<span class="${cls(s.day)}">${syen(s.day)}（${pct(s.day/(s.total - s.day),2)}）</span>`;
+  else if (D.history.length >= 2) { const a = D.history[D.history.length-2].total, b = D.history[D.history.length-1].total; dayTxt = `<span class="${cls(b-a)}">${syen(b-a)}</span>`; }
+  $('#v-home').innerHTML = `
+    <div class="card">
+      <div class="lbl">総資産</div>
+      <div class="big">${yen(s.total)}</div>
+      <div class="sub">含み損益 <span class="${cls(s.pl)}">${syen(s.pl)}（${pct(s.plr)}）</span></div>
+      ${dayTxt ? `<div class="sub">前日比 ${dayTxt}</div>` : ''}
+    </div>
+    <div class="card"><h3>資産配分</h3>
+      ${cats.length ? `<div class="alloc"><div class="cv"><canvas id="c-alloc"></canvas></div><div class="legend">
+        ${cats.map(k => `<div><span><i class="dot" style="background:${CAT[k].color}"></i>${CAT[k].label}</span><span class="num">${man(s.cat[k].value)}・${(s.cat[k].value/s.total*100).toFixed(1)}%</span></div>`).join('')}
+      </div></div>` : '<div class="empty">「保有」タブから資産を追加してください</div>'}
+    </div>
+    <div class="card"><h3>資産推移<div class="seg" id="segRange">${['1M','3M','1Y','ALL'].map(r => `<button data-r="${r}" class="${r===homeRange?'on':''}">${r==='ALL'?'全期間':r}</button>`).join('')}</div></h3>
+      <div class="hcv"><canvas id="c-hist"></canvas></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><div class="lbl">予想年間配当（税引後）</div><div class="mid">${man(s.divNet)}</div><div class="sub">月 ${yen(s.divNet/12)}</div></div>
+      <div class="card"><div class="lbl">FIRE達成率</div><div class="mid">${f.target ? (f.progress*100).toFixed(1)+'%' : '—'}</div>
+        <div class="bar"><i style="width:${Math.min(100,f.progress*100)}%"></i></div><div class="sub">${f.target ? '目標 ' + man(f.target) : 'FIREタブで設定'}</div></div>
+    </div>`;
+  if (cats.length) mkChart('c-alloc', {type:'doughnut', data:{labels:cats.map(k=>CAT[k].label), datasets:[{data:cats.map(k=>Math.round(s.cat[k].value)), backgroundColor:cats.map(k=>CAT[k].color), borderWidth:0}]},
+    options:{cutout:'64%', plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>` ${c.label} ${yen(c.raw)}`}}}, maintainAspectRatio:false}});
+  const days = {'1M':31,'3M':92,'1Y':366,'ALL':1e9}[homeRange];
+  const cutoff = new Date(Date.now() - days*86400e3).toISOString().slice(0,10);
+  const hs = D.history.filter(r => r.date >= cutoff);
+  mkChart('c-hist', {type:'line', data:{labels:hs.map(r=>r.date), datasets:[
+      {label:'総資産', data:hs.map(r=>num(r.total)), borderColor:'#4f8cff', backgroundColor:'rgba(79,140,255,.12)', fill:true, pointRadius:0, tension:.25, borderWidth:2},
+      {label:'取得額', data:hs.map(r=>num(r.cost)), borderColor:'#9aa1ab', borderDash:[4,4], pointRadius:0, borderWidth:1.2, fill:false}]},
+    options:{maintainAspectRatio:false, interaction:{mode:'index',intersect:false}, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>` ${c.dataset.label} ${yen(c.raw)}`}}},
+      scales:{x:{ticks:{maxTicksLimit:5, callback:function(v){ return this.getLabelForValue(v).slice(2).replace(/-/g,'/'); }}, grid:{display:false}}, y:yAxisMan}}});
+  document.querySelectorAll('#segRange button').forEach(b => b.onclick = () => { homeRange = b.dataset.r; renderHome(); });
+}
+
+function renderHold(){
+  const s = summary();
+  const cats = Object.keys(CAT).filter(k => s.cat[k].items.length);
+  $('#v-hold').innerHTML = `
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center">
+      <div><div class="lbl">評価額合計（${s.items.length}件）</div><div class="mid">${yen(s.total)}</div><div class="sub"><span class="${cls(s.pl)}">${syen(s.pl)}（${pct(s.plr)}）</span></div></div>
+      <button class="btn sm" id="btnAdd">＋ 追加</button>
+    </div>
+    ${cats.length ? '' : '<div class="card empty">まだ資産がありません。「＋ 追加」から登録してください</div>'}
+    ${cats.map(k => { const c = s.cat[k]; const pl = c.value - c.cost;
+      return `<div class="card"><h3><span><i class="dot" style="background:${CAT[k].color}"></i>${CAT[k].label}</span><span class="num" style="color:var(--tx)">${yen(c.value)} ${k==='cash'?'':`<span class="${cls(pl)}" style="font-size:12px">${pct(c.cost?pl/c.cost:0)}</span>`}</span></h3>
+      ${c.items.sort((a,b) => b.value - a.value).map(it => holdRow(it, s.total)).join('')}</div>`; }).join('')}`;
+  $('#btnAdd').onclick = () => openHolding(null);
+  document.querySelectorAll('[data-hid]').forEach(el => el.onclick = () => openHolding(el.dataset.hid));
+}
+function holdRow(it, total){
+  const h = it.h;
+  const sym = CUR_SYM[it.cur] || '';
+  let meta;
+  if (h.type === 'cash') meta = `${esc(h.account || '')}${it.cur !== 'JPY' ? '・' + it.cur : ''}`;
+  else {
+    const unit = h.type === 'fund' ? '口' : h.type === 'gold' ? 'g' : h.type === 'crypto' ? '' : '株';
+    meta = `${esc(h.code)} ${fmtN(h.qty, 8)}${unit}・${sym}${fmtN(it.price)}${num(h.manualPrice) > 0 ? '<span class="badge">手動</span>' : ''}${!it.price ? '<span class="badge" style="color:var(--neg)">価格なし</span>' : ''}`;
+  }
+  return `<div class="row" data-hid="${esc(h.id)}">
+    <div class="l"><div class="nm">${esc(h.name || h.code)}${h.account ? `<span class="badge">${esc(h.account)}</span>` : ''}</div><div class="meta">${meta}</div></div>
+    <div class="r"><div class="num">${yen(it.value)}</div><div class="meta"><span class="${cls(it.pl)}">${h.type === 'cash' ? '' : pct(it.plr)}</span> ${total ? (it.value/total*100).toFixed(1) + '%' : ''}</div></div>
+  </div>`;
+}
+
+const TYPE_HINT = {
+  jp:{code:'証券コード（例 7203）', qty:'株数', cost:'取得単価（円）', price:'空欄なら自動取得'},
+  us:{code:'ティッカー（例 AAPL、VOO）', qty:'株数', cost:'取得単価（ドル）', price:'空欄なら自動取得'},
+  hk:{code:'銘柄コード（例 0700）', qty:'株数', cost:'取得単価（香港ドル）', price:'空欄なら自動取得'},
+  fund:{code:'任意（協会コードなど）', qty:'保有口数（口）', cost:'平均取得単価（1万口あたり・円）', price:'基準価額（1万口あたり）を入力。投信は自動取得なし'},
+  crypto:{code:'通貨記号（例 BTC、ETH）', qty:'数量', cost:'取得単価（円）', price:'空欄なら自動取得'},
+  gold:{code:'任意', qty:'グラム数', cost:'取得単価（円/g）', price:'空欄なら国際金価格から自動計算（円/g・税抜）'},
+  cash:{code:'任意', qty:'金額', cost:'不要', price:'不要'},
+  other:{code:'任意', qty:'数量', cost:'取得単価', price:'現在の単価を入力'},
+};
+function openHolding(id){
+  const h = D.holdings.find(x => String(x.id) === String(id)) || {type:'jp', account:'特定', currency:'JPY'};
+  const opt = (arr, v) => arr.map(a => `<option value="${esc(a[0])}" ${String(a[0]) === String(v) ? 'selected' : ''}>${esc(a[1])}</option>`).join('');
+  openDlg(id ? '資産を編集' : '資産を追加', `
+    <form id="fH">
+      <input type="hidden" name="id" value="${esc(h.id || '')}">
+      <div class="f2">
+        <div class="f"><label>種別</label><select name="type">${opt(Object.keys(CAT).map(k=>[k,CAT[k].label]), h.type)}</select></div>
+        <div class="f"><label>口座</label><select name="account">${opt(ACCOUNTS.map(a=>[a,a]), h.account)}</select></div>
+      </div>
+      <div class="f"><label id="lCode">コード</label><input name="code" value="${esc(h.code || '')}" autocapitalize="characters" autocomplete="off"></div>
+      <div class="f"><label>名称</label><input name="name" value="${esc(h.name || '')}" autocomplete="off"></div>
+      <div class="f2">
+        <div class="f"><label id="lQty">数量</label><input name="qty" inputmode="decimal" value="${esc(h.qty ?? '')}"></div>
+        <div class="f" id="wCost"><label id="lCost">取得単価</label><input name="cost" inputmode="decimal" value="${esc(h.cost ?? '')}"></div>
+      </div>
+      <div class="f2">
+        <div class="f"><label>通貨</label><select name="currency">${opt([['JPY','円'],['USD','米ドル'],['HKD','香港ドル']], h.currency || DEF_CUR[h.type])}</select></div>
+        <div class="f" id="wFx"><label>取得時の為替（円）</label><input name="costFx" inputmode="decimal" value="${esc(h.costFx ?? '')}" placeholder="空欄＝現在レート"></div>
+      </div>
+      <div class="f" id="wDps"><label id="lDps">1株あたり年間配当（現地通貨）</label><input name="dps" inputmode="decimal" value="${esc(h.dps ?? '')}"></div>
+      <div class="f" id="wPrice"><label>手動価格</label><input name="manualPrice" inputmode="decimal" value="${esc(h.manualPrice ?? '')}"><div class="hint" id="hPrice"></div></div>
+      <div class="f"><label>メモ</label><textarea name="memo" rows="2">${esc(h.memo || '')}</textarea></div>
+      ${id && h.priceUpdated ? `<div class="sub" style="margin-bottom:12px">現在値 ${fmtN(h.price)}（${esc(h.priceUpdated)} 更新）</div>` : ''}
+      <button class="btn" type="submit">保存</button>
+      ${id ? '<div style="height:10px"></div><button class="btn danger" type="button" id="btnDelH">この資産を削除</button>' : ''}
+    </form>`);
+  const f = $('#fH');
+  const sync = (typeChanged) => {
+    const t = f.type.value, hint = TYPE_HINT[t];
+    $('#lCode').textContent = 'コード：' + hint.code; $('#lQty').textContent = hint.qty; $('#lCost').textContent = hint.cost;
+    $('#hPrice').textContent = hint.price;
+    $('#wCost').style.display = t === 'cash' ? 'none' : '';
+    $('#wPrice').style.display = t === 'cash' ? 'none' : '';
+    $('#wDps').style.display = ['crypto','gold','cash'].includes(t) ? 'none' : '';
+    $('#lDps').textContent = t === 'fund' ? '年間分配金（1万口あたり・円）' : '1株あたり年間配当（現地通貨）';
+    if (typeChanged && !['cash','other'].includes(t)) f.currency.value = DEF_CUR[t];
+    $('#wFx').style.visibility = f.currency.value === 'JPY' ? 'hidden' : 'visible';
+  };
+  sync(false);
+  f.type.onchange = () => sync(true);
+  f.currency.onchange = () => sync(false);
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const o = Object.fromEntries(new FormData(f).entries());
+    if (!o.qty) return toast('数量を入力してください');
+    if (!o.name && !o.code) return toast('名称かコードを入力してください');
+    await busy(f.querySelector('[type=submit]'), () => run('saveHolding', o, '保存しました'));
+    closeDlg();
+  };
+  const del = $('#btnDelH');
+  if (del) del.onclick = async () => { if (!confirm('削除しますか？')) return; await busy(del, () => run('deleteHolding', {id}, '削除しました')); closeDlg(); };
+}
+
+function renderDiv(){
+  const s = summary(), y = new Date().getFullYear();
+  const recv = D.dividends.slice().sort((a,b) => String(b.date).localeCompare(String(a.date)));
+  const sumYear = yy => recv.filter(r => String(r.date).startsWith(yy)).reduce((a,r) => a + num(r.amount), 0);
+  const monthly = yy => Array.from({length:12}, (_,m) => recv.filter(r => String(r.date).startsWith(`${yy}-${String(m+1).padStart(2,'0')}`)).reduce((a,r) => a + num(r.amount), 0));
+  const payers = s.items.filter(it => it.divAnnual > 0).sort((a,b) => b.divNet - a.divNet);
+  $('#v-div').innerHTML = `
+    <div class="grid2">
+      <div class="card"><div class="lbl">予想年間配当</div><div class="mid">${yen(s.divNet)}</div><div class="sub">税引前 ${yen(s.div)}</div></div>
+      <div class="card"><div class="lbl">配当利回り</div><div class="mid">${s.total ? (s.div/s.total*100).toFixed(2) : '0.00'}%</div><div class="sub">取得額比 ${s.cost ? (s.div/s.cost*100).toFixed(2) : '0.00'}%</div></div>
+    </div>
+    <div style="height:12px"></div>
+    <div class="card"><h3><span>受取実績 ${y}年 <b style="color:var(--tx)">${yen(sumYear(String(y)))}</b></span><span style="font-size:12px">前年 ${yen(sumYear(String(y-1)))}</span></h3>
+      <div class="hcv" style="height:170px"><canvas id="c-div"></canvas></div></div>
+    <div class="card"><h3>銘柄別の予想配当（税引後・年）</h3>
+      ${payers.length ? payers.map(it => `<div class="row"><div class="l"><div class="nm">${esc(it.h.name || it.h.code)}</div><div class="meta">${esc(it.h.code)}・利回り ${it.value ? (it.divAnnual/it.value*100).toFixed(2) : 0}%${it.h.account ? '・' + esc(it.h.account) : ''}</div></div><div class="r num">${yen(it.divNet)}</div></div>`).join('')
+        : '<div class="empty">保有資産に「年間配当」を入力すると表示されます</div>'}
+    </div>
+    <div class="card"><h3>受取記録<button class="btn sm" id="btnAddDiv">＋ 記録</button></h3>
+      ${recv.length ? recv.slice(0,60).map(r => `<div class="row" data-did="${esc(r.id)}"><div class="l"><div class="nm">${esc(r.name || r.code)}</div><div class="meta">${esc(r.date)}${r.account ? '・' + esc(r.account) : ''}</div></div><div class="r num">${yen(num(r.amount))}</div></div>`).join('')
+        : '<div class="empty">まだ記録がありません</div>'}
+    </div>`;
+  mkChart('c-div', {type:'bar', data:{labels:Array.from({length:12},(_,i)=>(i+1)+'月'), datasets:[
+      {label:`${y-1}年`, data:monthly(y-1), backgroundColor:'#3a4150', borderRadius:4},
+      {label:`${y}年`, data:monthly(y), backgroundColor:'#3fcf8e', borderRadius:4}]},
+    options:{maintainAspectRatio:false, plugins:{legend:{labels:{boxWidth:10}}, tooltip:{callbacks:{label:c=>` ${c.dataset.label} ${yen(c.raw)}`}}}, scales:{x:{grid:{display:false}}, y:{ticks:{callback:v=>v>=10000?(v/1e4)+'万':v}, grid:{color:'#22262d'}}}}});
+  $('#btnAddDiv').onclick = () => openDividend(null);
+  document.querySelectorAll('[data-did]').forEach(el => el.onclick = () => openDividend(el.dataset.did));
+}
+function openDividend(id){
+  const r = D.dividends.find(x => String(x.id) === String(id)) || {date: todayStr(), account:'特定'};
+  const list = D.holdings.filter(h => !['cash','gold'].includes(h.type));
+  openDlg(id ? '受取記録を編集' : '配当の受取を記録', `
+    <form id="fD">
+      <input type="hidden" name="id" value="${esc(r.id || '')}">
+      <div class="f"><label>銘柄</label><select name="pick"><option value="">（手入力）</option>${list.map(h => `<option value="${esc(h.id)}" ${h.code && h.code === r.code ? 'selected' : ''}>${esc(h.name || h.code)}</option>`).join('')}</select></div>
+      <div class="f2">
+        <div class="f"><label>コード</label><input name="code" value="${esc(r.code || '')}"></div>
+        <div class="f"><label>名称</label><input name="name" value="${esc(r.name || '')}"></div>
+      </div>
+      <div class="f2">
+        <div class="f"><label>受取日</label><input type="date" name="date" value="${esc(r.date)}"></div>
+        <div class="f"><label>受取額（円・税引後）</label><input name="amount" inputmode="decimal" value="${esc(r.amount ?? '')}"></div>
+      </div>
+      <div class="f"><label>口座</label><select name="account">${ACCOUNTS.map(a => `<option ${a === r.account ? 'selected' : ''}>${a}</option>`).join('')}</select></div>
+      <div class="f"><label>メモ</label><input name="memo" value="${esc(r.memo || '')}"></div>
+      <button class="btn" type="submit">保存</button>
+      ${id ? '<div style="height:10px"></div><button class="btn danger" type="button" id="btnDelD">この記録を削除</button>' : ''}
+    </form>`);
+  const f = $('#fD');
+  f.pick.onchange = () => { const h = D.holdings.find(x => String(x.id) === f.pick.value); if (h) { f.code.value = h.code || ''; f.name.value = h.name || ''; f.account.value = h.account || '特定'; } };
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const o = Object.fromEntries(new FormData(f).entries()); delete o.pick;
+    if (!num(o.amount)) return toast('受取額を入力してください');
+    await busy(f.querySelector('[type=submit]'), () => run('saveDividend', o, '記録しました'));
+    closeDlg();
+  };
+  const del = $('#btnDelD');
+  if (del) del.onclick = async () => { if (!confirm('削除しますか？')) return; await busy(del, () => run('deleteDividend', {id}, '削除しました')); closeDlg(); };
+}
+
+function renderFire(){
+  const s = summary(), f = fireCalc(s.total, s.divNet), st = D.settings || {};
+  let reach = '—';
+  if (f.target > 0) {
+    if (f.reachM === 0) reach = '達成済み 🎉';
+    else if (f.reachM > 0) { const yy = Math.floor(f.reachM/12), mm = f.reachM % 12; reach = `${yy}年${mm}か月後` + (f.age ? `（${Math.floor(f.age + f.reachM/12)}歳）` : ''); }
+    else reach = '50年以内は未達';
+  }
+  const years = f.reachM > 0 ? Math.min(50, Math.max(10, Math.ceil(f.reachM/12) + 5)) : (f.reachM === 0 ? 10 : 30);
+  $('#v-fire').innerHTML = `
+    <div class="card">
+      <div class="lbl">FIRE目標額${num(st.target) ? '' : `（年間支出 ÷ ${f.wr}%）`}</div>
+      <div class="big">${f.target ? yen(f.target) : '未設定'}</div>
+      <div class="bar"><i style="width:${Math.min(100, f.progress*100)}%"></i></div>
+      <div class="kv"><span>達成率</span><b>${(f.progress*100).toFixed(1)}%</b></div>
+      <div class="kv"><span>現在の総資産</span><span class="num">${yen(s.total)}</span></div>
+      <div class="kv"><span>不足額</span><span class="num">${yen(Math.max(0, f.target - s.total))}</span></div>
+      <div class="kv"><span>達成予想</span><b>${reach}</b></div>
+      <div class="kv"><span>配当で賄える生活費</span><span>${(f.divCover*100).toFixed(1)}%（月 ${yen(s.divNet/12)}）</span></div>
+      <div class="kv"><span>今の資産で取り崩せる額</span><span class="num">年 ${yen(s.total*f.wr/100)}</span></div>
+    </div>
+    <div class="card"><h3>資産の将来予測</h3><div class="hcv" style="height:220px"><canvas id="c-fire"></canvas></div>
+      <div class="sub">毎月${yen(f.monthly)}積立・年利${(f.ret*100).toFixed(1)}%で複利運用した場合</div></div>
+    <div class="card"><h3>前提条件</h3>
+      <form id="fF">
+        <div class="f2">
+          <div class="f"><label>年間支出（円）</label><input name="expense" inputmode="numeric" value="${esc(st.expense ?? '')}"></div>
+          <div class="f"><label>取り崩し率（%）</label><input name="withdrawRate" inputmode="decimal" value="${esc(st.withdrawRate ?? 4)}"></div>
+        </div>
+        <div class="f"><label>目標額（円・任意）</label><input name="target" inputmode="numeric" value="${esc(st.target ?? '')}" placeholder="空欄なら 年間支出 ÷ 取り崩し率"></div>
+        <div class="f2">
+          <div class="f"><label>毎月の積立額（円）</label><input name="monthly" inputmode="numeric" value="${esc(st.monthly ?? '')}"></div>
+          <div class="f"><label>想定利回り（年%）</label><input name="returnRate" inputmode="decimal" value="${esc(st.returnRate ?? 5)}"></div>
+        </div>
+        <div class="f"><label>現在の年齢（任意）</label><input name="age" inputmode="numeric" value="${esc(st.age ?? '')}"></div>
+        <button class="btn" type="submit">保存して再計算</button>
+      </form>
+    </div>`;
+  const ys = f.yearly.slice(0, years + 1);
+  mkChart('c-fire', {type:'line', data:{labels:ys.map((_,i) => f.age ? (f.age + i) + '歳' : i + '年'), datasets:[
+      {label:'予測資産', data:ys.map(Math.round), borderColor:'#4f8cff', backgroundColor:'rgba(79,140,255,.12)', fill:true, pointRadius:0, tension:.2, borderWidth:2},
+      {label:'目標', data:ys.map(() => Math.round(f.target)), borderColor:'#3fcf8e', borderDash:[5,4], pointRadius:0, borderWidth:1.5}]},
+    options:{maintainAspectRatio:false, interaction:{mode:'index',intersect:false}, plugins:{legend:{labels:{boxWidth:10}}, tooltip:{callbacks:{label:c=>` ${c.dataset.label} ${man(c.raw)}`}}},
+      scales:{x:{ticks:{maxTicksLimit:7}, grid:{display:false}}, y:yAxisMan}}});
+  $('#fF').onsubmit = async e => {
+    e.preventDefault();
+    const o = Object.fromEntries(new FormData(e.target).entries());
+    await busy(e.target.querySelector('[type=submit]'), () => run('saveSettings', o, '保存しました'));
+  };
+}
+
+function renderSet(){
+  $('#v-set').innerHTML = `
+    <div class="card"><h3>接続（Google Apps Script）</h3>
+      <form id="fC">
+        <div class="f"><label>ウェブアプリのURL</label><input name="apiUrl" value="${esc(cfg.apiUrl)}" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></div>
+        <div class="f"><label>トークン</label><input name="token" value="${esc(cfg.token)}" autocomplete="off"><div class="hint">スプレッドシートのメニュー「資産管理 → トークンを表示」で確認できます</div></div>
+        <button class="btn" type="submit">保存して接続</button>
+      </form>
+      <div class="sub" style="margin-top:10px">状態：${isDemo() ? 'デモモード（未接続）' : '接続済み'}</div>
+    </div>
+    <div class="card"><h3>データ</h3>
+      <div class="kv"><span>価格の最終更新</span><span>${esc(D.updated || '—')}</span></div>
+      <div class="kv"><span>為替</span><span>USD ${fmtN(D.fx.USD)}円 / HKD ${fmtN(D.fx.HKD, 3)}円</span></div>
+      <div class="kv"><span>資産推移の記録</span><span>${D.history.length}日分</span></div>
+      <div style="height:8px"></div>
+      ${isDemo() ? '<button class="btn ghost" id="btnResetDemo">デモデータを初期化</button>' : '<button class="btn ghost" id="btnReload">シートから再読み込み</button>'}
+    </div>
+    <div class="card"><h3>メモ</h3><div class="sub" style="line-height:1.7">
+      ・価格は毎日7時と16時に自動更新され、そのとき総資産を「資産推移」に記録します。<br>
+      ・投資信託の基準価額は自動取得できないため「手動価格」に入れてください。<br>
+      ・予想配当の税引後は、特定/一般口座20.315%、NISA非課税、米国株・中国株は現地課税10%で概算しています。
+    </div></div>`;
+  $('#fC').onsubmit = async e => {
+    e.preventDefault();
+    const o = Object.fromEntries(new FormData(e.target).entries());
+    cfg = {apiUrl: o.apiUrl.trim(), token: o.token.trim()}; lsSet(LS_CFG, cfg);
+    if (!cfg.apiUrl) { await run('all', {}); return toast('デモモードに戻しました'); }
+    await busy(e.target.querySelector('[type=submit]'), () => run('all', {}, '接続しました'));
+  };
+  const rd = $('#btnResetDemo'); if (rd) rd.onclick = () => { localStorage.removeItem(LS_DEMO); run('all', {}, '初期化しました'); };
+  const rl = $('#btnReload'); if (rl) rl.onclick = () => busy(rl, () => run('all', {}, '読み込みました'));
+}
+
+/* ===== ダイアログ・共通 ===== */
+function openDlg(title, html){ $('#dlgTitle').textContent = title; $('#dlgBody').innerHTML = html; $('#dlg').showModal(); }
+function closeDlg(){ const d = $('#dlg'); if (d.open) d.close(); }
+$('#dlgClose').onclick = closeDlg;
+async function busy(btn, fn){
+  const t = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 処理中…';
+  try { return await fn(); } finally { btn.disabled = false; btn.innerHTML = t; }
+}
+function show(v){
+  view = v;
+  document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  $('#title').textContent = TITLES[v];
+  window.scrollTo(0,0);
+}
+document.querySelectorAll('#nav button').forEach(b => b.onclick = () => show(b.dataset.v));
+$('#btnRefresh').onclick = () => busy($('#btnRefresh'), () => run('refresh', {}, '株価を更新しました'));
+
+/* ===== 起動 ===== */
+(async function init(){
+  if (!isDemo()) { const c = lsGet(LS_CACHE, null); if (c) { D = c; renderAll(); } }
+  else renderAll();
+  await run('all', {});
+})();
+</script>
+</body>
+</html>
