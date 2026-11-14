@@ -1,7 +1,7 @@
 /**
  * 資産管理アプリ バックエンド（Google Apps Script・スプレッドシートにバインド）
  *  - 保有資産・配当受取・資産推移・設定をシートに保存
- *  - GOOGLEFINANCE で株価・為替・暗号資産・金価格を自動取得
+ *  - Yahoo Finance（補完に GOOGLEFINANCE）で株価・為替・暗号資産・金価格を自動取得
  *  - 毎日 7時・16時 に価格更新＋資産推移を記録
  * 初回は setup() を実行してください。
  */
@@ -210,22 +210,32 @@ function updatePrices_() {
     if (t && !reqs.some(r => r[0] === t)) reqs.push([t, t]);
   });
 
-  let sh = ss_().getSheetByName('_calc');
-  if (!sh) { sh = ss_().insertSheet('_calc'); sh.hideSheet(); }
-  sh.clear();
-  sh.getRange(1, 1, reqs.length, 1).setValues(reqs.map(r => [r[0]]));
-  sh.getRange(1, 2, reqs.length, 2).setFormulas(reqs.map(r => {
-    const t = r[1];
-    const isCur = t.indexOf('CURRENCY:') === 0;
-    return ['=IFERROR(GOOGLEFINANCE("' + t + '","price"),"")',
-      isCur ? '=""' : '=IFERROR(GOOGLEFINANCE("' + t + '","closeyest"),"")'];
-  }));
-  SpreadsheetApp.flush();
-  Utilities.sleep(2500);
-  let vals = sh.getRange(1, 1, reqs.length, 3).getValues();
-  if (vals.filter(v => v[1] === '').length > reqs.length / 2) { Utilities.sleep(4000); vals = sh.getRange(1, 1, reqs.length, 3).getValues(); }
-  const res = {};
-  vals.forEach(v => { res[v[0]] = { price: typeof v[1] === 'number' ? v[1] : 0, prev: typeof v[2] === 'number' ? v[2] : 0 }; });
+  // 1) Yahoo Finance から取得（日本株・暗号資産・為替・金はこちらが主）
+  const res = fetchYahoo_(reqs.map(r => r[0]));
+
+  // 2) Yahoo で取れなかったものだけ GOOGLEFINANCE で補完
+  const rest = reqs.filter(r => !(res[r[0]] && res[r[0]].price) && r[1].indexOf('TYO:') !== 0);
+  if (rest.length) {
+    let sh = ss_().getSheetByName('_calc');
+    if (!sh) { sh = ss_().insertSheet('_calc'); sh.hideSheet(); }
+    sh.clear();
+    sh.getRange(1, 1, rest.length, 1).setValues(rest.map(r => [r[0]]));
+    sh.getRange(1, 2, rest.length, 2).setFormulas(rest.map(r => {
+      const t = r[1];
+      const isCur = t.indexOf('CURRENCY:') === 0;
+      return ['=IFERROR(GOOGLEFINANCE("' + t + '","price"),"")',
+        isCur ? '=""' : '=IFERROR(GOOGLEFINANCE("' + t + '","closeyest"),"")'];
+    }));
+    SpreadsheetApp.flush();
+    let vals = [];
+    for (let i = 0; i < 4; i++) {
+      Utilities.sleep(3000);
+      vals = sh.getRange(1, 1, rest.length, 3).getValues();
+      if (vals.every(v => typeof v[1] === 'number')) break;
+    }
+    vals.forEach(v => { if (typeof v[1] === 'number' && v[1] > 0) res[v[0]] = { price: v[1], prev: typeof v[2] === 'number' ? v[2] : 0 }; });
+  }
+  ['FX_USD', 'FX_HKD', 'GOLD'].forEach(k => { if (!res[k]) res[k] = { price: 0, prev: 0 }; });
 
   const st = state_();
   if (res.FX_USD.price) st.fx.USD = res.FX_USD.price;
@@ -258,6 +268,36 @@ function updatePrices_() {
     }
   });
   rng.setValues(m);
+}
+
+/* Yahoo Finance のチャートAPIで現在値と前日終値を取得 */
+function yahooSymbol_(key) {
+  if (key === 'FX_USD') return 'USDJPY=X';
+  if (key === 'FX_HKD') return 'HKDJPY=X';
+  if (key === 'GOLD') return 'GC=F';
+  if (key.indexOf('TYO:') === 0) return key.slice(4) + '.T';
+  if (key.indexOf('HKG:') === 0) return key.slice(4) + '.HK';
+  if (key.indexOf('CURRENCY:') === 0) return key.slice(9, -3) + '-' + key.slice(-3);
+  return key.replace(/\./g, '-');
+}
+function fetchYahoo_(keys) {
+  const out = {};
+  const reqs = keys.map(k => ({
+    url: 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(yahooSymbol_(k)) + '?range=1d&interval=1d',
+    muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' },
+  }));
+  let resps = [];
+  try { resps = UrlFetchApp.fetchAll(reqs); } catch (e) { Logger.log('Yahoo取得失敗: ' + e); return out; }
+  resps.forEach((r, i) => {
+    try {
+      if (r.getResponseCode() !== 200) return;
+      const meta = JSON.parse(r.getContentText()).chart.result[0].meta;
+      const price = Number(meta.regularMarketPrice) || 0;
+      const prev = Number(meta.chartPreviousClose || meta.previousClose) || 0;
+      if (price > 0) out[keys[i]] = { price: price, prev: prev };
+    } catch (e) {}
+  });
+  return out;
 }
 
 /* ---------- 資産推移の記録 ---------- */
