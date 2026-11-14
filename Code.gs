@@ -15,7 +15,7 @@ const SCHEMA = {
     ['id', 'ID'], ['type', '種別'], ['code', 'コード'], ['name', '名称'], ['account', '口座'],
     ['qty', '数量'], ['cost', '取得単価'], ['currency', '通貨'], ['costFx', '取得時為替'],
     ['dps', '年間配当/株'], ['manualPrice', '手動価格'], ['price', '現在値'], ['prevClose', '前日終値'],
-    ['priceUpdated', '価格更新'], ['memo', 'メモ']] },
+    ['priceUpdated', '価格更新'], ['memo', 'メモ'], ['broker', '金融機関']] },
   dividends: { name: '配当受取', text: [1, 2, 3], cols: [
     ['id', 'ID'], ['date', '受取日'], ['code', 'コード'], ['name', '名称'],
     ['amount', '受取額(円・税引後)'], ['account', '口座'], ['memo', 'メモ']] },
@@ -161,7 +161,7 @@ function saveHolding_(d) {
     currency: d.currency || DEF_CUR[d.type] || 'JPY', costFx: numOrBlank_(d.costFx),
     dps: numOrBlank_(d.dps), manualPrice: numOrBlank_(d.manualPrice),
     price: old ? old.price : '', prevClose: old ? old.prevClose : '', priceUpdated: old ? old.priceUpdated : '',
-    memo: d.memo || '',
+    memo: d.memo || '', broker: String(d.broker || '').trim(),
   };
   if (h.manualPrice !== '') { h.price = h.manualPrice; }
   writeObj_('holdings', row > 0 ? row : sheet_('holdings').getLastRow() + 1, h);
@@ -338,6 +338,9 @@ function sheet_(k) {
     sh.getRange(1, 1, 1, s.cols.length).setValues([s.cols.map(c => c[1])]).setFontWeight('bold');
     sh.setFrozenRows(1);
     (s.text || []).forEach(ci => sh.getRange(1, ci, sh.getMaxRows(), 1).setNumberFormat('@'));
+  } else if (sh.getLastColumn() < s.cols.length) {
+    // 列が後から増えたとき、見出しを足す
+    sh.getRange(1, 1, 1, s.cols.length).setValues([s.cols.map(c => c[1])]).setFontWeight('bold');
   }
   return sh;
 }

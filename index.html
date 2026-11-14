@@ -223,8 +223,8 @@ function demoSeed(){
     {id:'d6',type:'fund',code:'',name:'eMAXIS Slim 全世界株式',account:'NISAつみたて',qty:1600000,cost:21000,manualPrice:31850,price:31850},
     {id:'d7',type:'crypto',code:'BTC',name:'ビットコイン',account:'その他',qty:0.05,cost:9200000,price:15200000,prevClose:15050000},
     {id:'d8',type:'gold',code:'',name:'純金積立',account:'その他',qty:80,cost:12800,price:19800},
-    {id:'d9',type:'cash',code:'',name:'普通預金',account:'その他',qty:2800000},
-  ].map(h => Object.assign({currency:DEF_CUR[h.type], costFx:'', dps:'', manualPrice:'', prevClose:'', priceUpdated:'', memo:''}, h));
+    {id:'d9',type:'cash',code:'',name:'普通預金',account:'その他',qty:2800000,broker:'楽天銀行'},
+  ].map(h => Object.assign({currency:DEF_CUR[h.type], broker:'楽天証券', costFx:'', dps:'', manualPrice:'', prevClose:'', priceUpdated:'', memo:''}, h));
   const total = H.reduce((a,h) => a + calc(h, fx).value, 0);
   const cost = H.reduce((a,h) => a + calc(h, fx).cost, 0);
   const hist = []; let v = total; let c = cost;
@@ -338,32 +338,51 @@ function renderHome(){
   document.querySelectorAll('#segRange button').forEach(b => b.onclick = () => { homeRange = b.dataset.r; renderHome(); });
 }
 
+let holdGroup = 'type';
+const BROKER_DEF = ['楽天証券','SBI証券','楽天銀行','その他'];
+const brokerList = () => [...new Set([...D.holdings.map(h => h.broker).filter(Boolean), ...BROKER_DEF])];
+const unitQty = t => t === 'fund' ? 10000 : 1;
+const isAmountMode = h => h && h.type !== 'cash' && !String(h.code || '').trim() && num(h.qty) === unitQty(h.type) && String(h.manualPrice ?? '') !== '';
+
 function renderHold(){
   const s = summary();
-  const cats = Object.keys(CAT).filter(k => s.cat[k].items.length);
+  let groups;
+  if (holdGroup === 'broker') {
+    const m = {};
+    s.items.forEach(it => { const k = it.h.broker || '金融機関未設定'; (m[k] = m[k] || {label:k, color:'#8b8d98', items:[], value:0, cost:0, cash:false}); m[k].items.push(it); m[k].value += it.value; m[k].cost += it.cost; });
+    groups = Object.values(m).sort((a,b) => b.value - a.value);
+  } else {
+    groups = Object.keys(CAT).filter(k => s.cat[k].items.length).map(k => ({label:CAT[k].label, color:CAT[k].color, items:s.cat[k].items, value:s.cat[k].value, cost:s.cat[k].cost, cash:k === 'cash'}));
+  }
   $('#v-hold').innerHTML = `
-    <div class="card" style="display:flex;justify-content:space-between;align-items:center">
-      <div><div class="lbl">評価額合計（${s.items.length}件）</div><div class="mid">${yen(s.total)}</div><div class="sub"><span class="${cls(s.pl)}">${syen(s.pl)}（${pct(s.plr)}）</span></div></div>
-      <button class="btn sm" id="btnAdd">＋ 追加</button>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><div class="lbl">評価額合計（${s.items.length}件）</div><div class="mid">${yen(s.total)}</div><div class="sub"><span class="${cls(s.pl)}">${syen(s.pl)}（${pct(s.plr)}）</span></div></div>
+        <button class="btn sm" id="btnAdd">＋ 追加</button>
+      </div>
+      <div class="seg" id="segGroup" style="margin-top:12px;width:max-content">${[['type','種別ごと'],['broker','金融機関ごと']].map(g => `<button data-g="${g[0]}" class="${holdGroup===g[0]?'on':''}">${g[1]}</button>`).join('')}</div>
     </div>
-    ${cats.length ? '' : '<div class="card empty">まだ資産がありません。「＋ 追加」から登録してください</div>'}
-    ${cats.map(k => { const c = s.cat[k]; const pl = c.value - c.cost;
-      return `<div class="card"><h3><span><i class="dot" style="background:${CAT[k].color}"></i>${CAT[k].label}</span><span class="num" style="color:var(--tx)">${yen(c.value)} ${k==='cash'?'':`<span class="${cls(pl)}" style="font-size:12px">${pct(c.cost?pl/c.cost:0)}</span>`}</span></h3>
-      ${c.items.sort((a,b) => b.value - a.value).map(it => holdRow(it, s.total)).join('')}</div>`; }).join('')}`;
+    ${groups.length ? '' : '<div class="card empty">まだ資産がありません。「＋ 追加」から登録してください</div>'}
+    ${groups.map(g => { const pl = g.value - g.cost;
+      return `<div class="card"><h3><span><i class="dot" style="background:${g.color}"></i>${esc(g.label)}</span><span class="num" style="color:var(--tx)">${yen(g.value)} ${g.cash?'':`<span class="${cls(pl)}" style="font-size:12px">${pct(g.cost?pl/g.cost:0)}</span>`}</span></h3>
+      ${g.items.sort((a,b) => b.value - a.value).map(it => holdRow(it, s.total)).join('')}</div>`; }).join('')}`;
   $('#btnAdd').onclick = () => openHolding(null);
+  document.querySelectorAll('#segGroup button').forEach(b => b.onclick = () => { holdGroup = b.dataset.g; renderHold(); });
   document.querySelectorAll('[data-hid]').forEach(el => el.onclick = () => openHolding(el.dataset.hid));
 }
 function holdRow(it, total){
   const h = it.h;
   const sym = CUR_SYM[it.cur] || '';
+  const where = holdGroup === 'broker' ? (CAT[h.type] ? CAT[h.type].label : '') : (h.broker || '');
   let meta;
-  if (h.type === 'cash') meta = `${esc(h.account || '')}${it.cur !== 'JPY' ? '・' + it.cur : ''}`;
+  if (h.type === 'cash') meta = `${esc(where)}${it.cur !== 'JPY' ? '・' + it.cur : ''}`;
+  else if (isAmountMode(h)) meta = `${esc(where)}${where ? '・' : ''}金額で入力`;
   else {
     const unit = h.type === 'fund' ? '口' : h.type === 'gold' ? 'g' : h.type === 'crypto' ? '' : '株';
-    meta = `${esc(h.code)} ${fmtN(h.qty, 8)}${unit}・${sym}${fmtN(it.price)}${num(h.manualPrice) > 0 ? '<span class="badge">手動</span>' : ''}${!it.price ? '<span class="badge" style="color:var(--neg)">価格なし</span>' : ''}`;
+    meta = `${where ? esc(where) + '・' : ''}${esc(h.code)} ${fmtN(h.qty, 8)}${unit}・${sym}${fmtN(it.price)}${num(h.manualPrice) > 0 ? '<span class="badge">手動</span>' : ''}${!it.price ? '<span class="badge" style="color:var(--neg)">価格なし</span>' : ''}`;
   }
   return `<div class="row" data-hid="${esc(h.id)}">
-    <div class="l"><div class="nm">${esc(h.name || h.code)}${h.account ? `<span class="badge">${esc(h.account)}</span>` : ''}</div><div class="meta">${meta}</div></div>
+    <div class="l"><div class="nm">${esc(h.name || h.code)}${h.account && h.account !== 'その他' ? `<span class="badge">${esc(h.account)}</span>` : ''}</div><div class="meta">${meta}</div></div>
     <div class="r"><div class="num">${yen(it.value)}</div><div class="meta"><span class="${cls(it.pl)}">${h.type === 'cash' ? '' : pct(it.plr)}</span> ${total ? (it.value/total*100).toFixed(1) + '%' : ''}</div></div>
   </div>`;
 }
@@ -380,34 +399,55 @@ const TYPE_HINT = {
 };
 function openHolding(id){
   const h = D.holdings.find(x => String(x.id) === String(id)) || {type:'jp', account:'特定', currency:'JPY'};
+  const amt0 = isAmountMode(h);
   const opt = (arr, v) => arr.map(a => `<option value="${esc(a[0])}" ${String(a[0]) === String(v) ? 'selected' : ''}>${esc(a[1])}</option>`).join('');
   openDlg(id ? '資産を編集' : '資産を追加', `
     <form id="fH">
       <input type="hidden" name="id" value="${esc(h.id || '')}">
       <div class="f2">
         <div class="f"><label>種別</label><select name="type">${opt(Object.keys(CAT).map(k=>[k,CAT[k].label]), h.type)}</select></div>
-        <div class="f"><label>口座</label><select name="account">${opt(ACCOUNTS.map(a=>[a,a]), h.account)}</select></div>
+        <div class="f"><label>口座区分</label><select name="account">${opt(ACCOUNTS.map(a=>[a,a]), h.account)}</select></div>
       </div>
-      <div class="f"><label id="lCode">コード</label><input name="code" value="${esc(h.code || '')}" autocapitalize="characters" autocomplete="off"></div>
-      <div class="f"><label>名称</label><input name="name" value="${esc(h.name || '')}" autocomplete="off"></div>
-      <div class="f2">
-        <div class="f"><label id="lQty">数量</label><input name="qty" inputmode="decimal" value="${esc(h.qty ?? '')}"></div>
-        <div class="f" id="wCost"><label id="lCost">取得単価</label><input name="cost" inputmode="decimal" value="${esc(h.cost ?? '')}"></div>
+      <div class="f"><label>金融機関・口座名</label><input name="broker" list="brokerDL" value="${esc(h.broker || '')}" placeholder="例 楽天証券、SBI証券、楽天銀行" autocomplete="off">
+        <datalist id="brokerDL">${brokerList().map(b => `<option value="${esc(b)}">`).join('')}</datalist></div>
+      <div class="f"><label>名称</label><input name="name" value="${esc(h.name || '')}" autocomplete="off" placeholder="例 普通預金、iDeCo、eMAXIS Slim"></div>
+      <div class="f" id="wMode"><label>入力方法</label>
+        <div class="seg" id="segMode" style="width:max-content"><button type="button" data-m="unit" class="${amt0?'':'on'}">数量×単価</button><button type="button" data-m="amount" class="${amt0?'on':''}">金額で入力</button></div>
+        <input type="hidden" name="mode" value="${amt0 ? 'amount' : 'unit'}"></div>
+      <div id="bAmount">
+        <div class="f2">
+          <div class="f"><label>評価額（円）</label><input name="amtValue" inputmode="numeric" value="${amt0 ? esc(h.manualPrice) : ''}"></div>
+          <div class="f"><label>取得額（円・任意）</label><input name="amtCost" inputmode="numeric" value="${amt0 ? esc(h.cost ?? '') : ''}" placeholder="空欄なら評価額と同じ"></div>
+        </div>
+        <div class="f"><label>年間の配当・分配金（円・任意）</label><input name="amtDiv" inputmode="numeric" value="${amt0 ? esc(h.dps ?? '') : ''}"></div>
+        <div style="margin:-4px 0 12px;font-size:11px;color:var(--sub)">株数や基準価額が分からない資産（iDeCo、保険、他社の口座など）向け。価格は自動更新されないので、変わったらここで金額を直してください。</div>
       </div>
-      <div class="f2">
-        <div class="f"><label>通貨</label><select name="currency">${opt([['JPY','円'],['USD','米ドル'],['HKD','香港ドル']], h.currency || DEF_CUR[h.type])}</select></div>
-        <div class="f" id="wFx"><label>取得時の為替（円）</label><input name="costFx" inputmode="decimal" value="${esc(h.costFx ?? '')}" placeholder="空欄＝現在レート"></div>
+      <div id="bUnit">
+        <div class="f"><label id="lCode">コード</label><input name="code" value="${esc(amt0 ? '' : (h.code || ''))}" autocapitalize="characters" autocomplete="off"></div>
+        <div class="f2">
+          <div class="f"><label id="lQty">数量</label><input name="qty" inputmode="decimal" value="${amt0 ? '' : esc(h.qty ?? '')}"></div>
+          <div class="f" id="wCost"><label id="lCost">取得単価</label><input name="cost" inputmode="decimal" value="${amt0 ? '' : esc(h.cost ?? '')}"></div>
+        </div>
+        <div class="f2">
+          <div class="f"><label>通貨</label><select name="currency">${opt([['JPY','円'],['USD','米ドル'],['HKD','香港ドル']], h.currency || DEF_CUR[h.type])}</select></div>
+          <div class="f" id="wFx"><label>取得時の為替（円）</label><input name="costFx" inputmode="decimal" value="${esc(h.costFx ?? '')}" placeholder="空欄＝現在レート"></div>
+        </div>
+        <div class="f" id="wDps"><label id="lDps">1株あたり年間配当（現地通貨）</label><input name="dps" inputmode="decimal" value="${amt0 ? '' : esc(h.dps ?? '')}"></div>
+        <div class="f" id="wPrice"><label>手動価格</label><input name="manualPrice" inputmode="decimal" value="${amt0 ? '' : esc(h.manualPrice ?? '')}"><div class="hint" id="hPrice"></div></div>
       </div>
-      <div class="f" id="wDps"><label id="lDps">1株あたり年間配当（現地通貨）</label><input name="dps" inputmode="decimal" value="${esc(h.dps ?? '')}"></div>
-      <div class="f" id="wPrice"><label>手動価格</label><input name="manualPrice" inputmode="decimal" value="${esc(h.manualPrice ?? '')}"><div class="hint" id="hPrice"></div></div>
       <div class="f"><label>メモ</label><textarea name="memo" rows="2">${esc(h.memo || '')}</textarea></div>
-      ${id && h.priceUpdated ? `<div class="sub" style="margin-bottom:12px">現在値 ${fmtN(h.price)}（${esc(h.priceUpdated)} 更新）</div>` : ''}
+      ${id && h.priceUpdated && !amt0 ? `<div class="sub" style="margin-bottom:12px">現在値 ${fmtN(h.price)}（${esc(h.priceUpdated)} 更新）</div>` : ''}
       <button class="btn" type="submit">保存</button>
       ${id ? '<div style="height:10px"></div><button class="btn danger" type="button" id="btnDelH">この資産を削除</button>' : ''}
     </form>`);
   const f = $('#fH');
   const sync = (typeChanged) => {
     const t = f.type.value, hint = TYPE_HINT[t];
+    const amount = t !== 'cash' && f.mode.value === 'amount';
+    $('#wMode').style.display = t === 'cash' ? 'none' : '';
+    $('#bAmount').style.display = amount ? '' : 'none';
+    $('#bUnit').style.display = amount ? 'none' : '';
+    document.querySelectorAll('#segMode button').forEach(b => b.classList.toggle('on', b.dataset.m === f.mode.value));
     $('#lCode').textContent = 'コード：' + hint.code; $('#lQty').textContent = hint.qty; $('#lCost').textContent = hint.cost;
     $('#hPrice').textContent = hint.price;
     $('#wCost').style.display = t === 'cash' ? 'none' : '';
@@ -415,16 +455,26 @@ function openHolding(id){
     $('#wDps').style.display = ['crypto','gold','cash'].includes(t) ? 'none' : '';
     $('#lDps').textContent = t === 'fund' ? '年間分配金（1万口あたり・円）' : '1株あたり年間配当（現地通貨）';
     if (typeChanged && !['cash','other'].includes(t)) f.currency.value = DEF_CUR[t];
+    if (typeChanged && t === 'cash') f.account.value = 'その他';
     $('#wFx').style.visibility = f.currency.value === 'JPY' ? 'hidden' : 'visible';
   };
   sync(false);
   f.type.onchange = () => sync(true);
   f.currency.onchange = () => sync(false);
+  document.querySelectorAll('#segMode button').forEach(b => b.onclick = () => { f.mode.value = b.dataset.m; sync(false); });
   f.onsubmit = async e => {
     e.preventDefault();
     const o = Object.fromEntries(new FormData(f).entries());
-    if (!o.qty) return toast('数量を入力してください');
-    if (!o.name && !o.code) return toast('名称かコードを入力してください');
+    if (o.type !== 'cash' && o.mode === 'amount') {
+      if (!num(o.amtValue)) return toast('評価額を入力してください');
+      if (!o.name) return toast('名称を入力してください');
+      const u = unitQty(o.type);
+      Object.assign(o, {code:'', qty:u, manualPrice:num(o.amtValue), cost:num(o.amtCost) || num(o.amtValue), currency:'JPY', costFx:'', dps:o.amtDiv ? num(o.amtDiv) : ''});
+    } else {
+      if (!o.qty) return toast(o.type === 'cash' ? '金額を入力してください' : '数量を入力してください');
+      if (!o.name && !o.code) return toast('名称かコードを入力してください');
+    }
+    ['mode','amtValue','amtCost','amtDiv'].forEach(k => delete o[k]);
     await busy(f.querySelector('[type=submit]'), () => run('saveHolding', o, '保存しました'));
     closeDlg();
   };
