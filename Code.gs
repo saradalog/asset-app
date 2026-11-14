@@ -2,7 +2,7 @@
  * 資産管理アプリ バックエンド（Google Apps Script・スプレッドシートにバインド）
  *  - 保有資産・配当受取・資産推移・設定をシートに保存
  *  - GOOGLEFINANCE で株価・為替・暗号資産・金価格を自動取得
- *  - 毎日 7時・16時 に価格更新＋資産推移を記録
+ *  - 毎日 7時・16時 に価格更新＋資産推移を記録（その前に日本株の株数・取得単価を「保有詳細」から同期）
  * 初回は setup() を実行してください。
  */
 const TZ = 'Asia/Tokyo';
@@ -48,6 +48,7 @@ function setup() {
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('資産管理')
     .addItem('株価を今すぐ更新', 'dailyJob')
+    .addItem('保有詳細から日本株を同期', 'syncNow')
     .addItem('トークンを表示', 'showToken')
     .addItem('初期設定（setup）', 'setup')
     .addToUi();
@@ -57,7 +58,68 @@ function showToken() {
 }
 
 /* 定期実行（トリガー） */
-function dailyJob() { withLock_(() => { updatePrices_(); snapshot_(); }); }
+function dailyJob() { withLock_(() => { syncFromHoldDetail_(); updatePrices_(); snapshot_(); }); }
+function syncNow() { withLock_(() => { const log = syncFromHoldDetail_(); updatePrices_(); snapshot_();
+  try { SpreadsheetApp.getUi().alert('保有詳細から同期しました\n\n' + (log.join('\n') || '変更なし')); } catch (e) {} }); }
+
+/* ---------- 保有詳細（四季報ビューア 監視銘柄）から日本株を同期 ----------
+ * 日本株の株数・取得単価は「四季報ビューア 監視銘柄」シートの「保有詳細」タブを元にする（2026-11-14 持ち主の決定）。
+ *  - 保有詳細にある銘柄（株数>0）：このシートの日本株の行の株数・取得単価を合わせる。行が無ければ足す。
+ *    同じコードが複数の行（口座別）にあるときは1行にまとめる（口座は「合算」）。保有詳細は口座の合計のため。
+ *  - 「売却履歴」タブにある銘柄：日本株の行を消す。
+ *  - どちらにも無い日本株の行は触らない（ログに出す）。米国株・中国株・投信・暗号資産・金・現金は触らない。
+ *  - 年間配当/株・手動価格・メモはこちらの値を残す。
+ * アプリで日本株の株数を直しても、次の同期（毎日7時・16時）で保有詳細の値に戻る。日本株の株数は四季報ビューアで入力する。
+ */
+const HOLD_SS_ID = '1FleDcwpRCVdc-19EMSSqsT7bmTMAq2cp_fzuXgJtQX0';
+function syncFromHoldDetail_() {
+  const log = [];
+  let src;
+  try { src = SpreadsheetApp.openById(HOLD_SS_ID); }
+  catch (e) { Logger.log('保有詳細を開けません（同期せず）: ' + e); return ['保有詳細を開けませんでした: ' + e]; }
+  const det = src.getSheetByName('保有詳細');
+  if (!det) return ['保有詳細タブがありません'];
+  const want = {};
+  det.getDataRange().getValues().slice(1).forEach(r => {
+    const c = String(r[0]).trim().toUpperCase(), q = numOrBlank_(r[2]);
+    if (/^[0-9A-Z]{4}$/.test(c) && q !== '' && q > 0) want[c] = { name: String(r[1]).trim(), qty: q, cost: numOrBlank_(r[3]) };
+  });
+  if (!Object.keys(want).length) return ['保有詳細に株数のある銘柄がありません（同期せず）'];
+  const sold = {};
+  const sh2 = src.getSheetByName('売却履歴');
+  if (sh2) sh2.getDataRange().getValues().slice(1).forEach(r => {
+    const c = String(r[0]).trim().toUpperCase(); if (c && !want[c]) sold[c] = 1;
+  });
+  const byCode = {};
+  readRows_('holdings').filter(h => h.type === 'jp').forEach(h => {
+    const c = String(h.code).trim().toUpperCase(); (byCode[c] = byCode[c] || []).push(h);
+  });
+  Object.keys(want).forEach(c => {
+    const w = want[c], rows = byCode[c] || [];
+    if (!rows.length) {
+      writeObj_('holdings', sheet_('holdings').getLastRow() + 1, { id: newId_(), type: 'jp', code: c, name: w.name,
+        account: '', qty: w.qty, cost: w.cost, currency: 'JPY', costFx: '', dps: '', manualPrice: '',
+        price: '', prevClose: '', priceUpdated: '', memo: '保有詳細から追加' });
+      log.push('追加 ' + c + ' ' + w.name + ' ' + w.qty + '株'); return;
+    }
+    const h = rows[0], merged = rows.length > 1;
+    const cost = w.cost === '' ? h.cost : w.cost;
+    if (merged || Number(h.qty) !== Number(w.qty) || Number(h.cost) !== Number(cost)) {
+      h.qty = w.qty; h.cost = cost;
+      if (merged) { h.account = '合算'; h.memo = (h.memo ? h.memo + ' / ' : '') + '保有詳細と同期（口座合算）'; }
+      writeObj_('holdings', findRow_('holdings', h.id), h);
+      log.push((merged ? 'まとめて更新 ' : '更新 ') + c + ' ' + w.qty + '株・' + cost + '円');
+    }
+    rows.slice(1).forEach(x => deleteRow_('holdings', x.id));
+  });
+  Object.keys(sold).forEach(c => (byCode[c] || []).forEach(x => {
+    deleteRow_('holdings', x.id); log.push('削除（売却済み） ' + c + ' ' + (x.name || ''));
+  }));
+  const other = Object.keys(byCode).filter(c => !want[c] && !sold[c]);
+  if (other.length) log.push('保有詳細に無いので触っていない日本株: ' + other.join(', '));
+  Logger.log(log.join('\n'));
+  return log;
+}
 
 /* ---------- Web API ---------- */
 function doGet(e) { return handle_((e && e.parameter) || {}); }
@@ -82,6 +144,7 @@ function handle_(p) {
           case 'deleteDividend': deleteRow_('dividends', d.id); break;
           case 'saveSettings': saveSettings_(d); break;
           case 'refresh': updatePrices_(); snapshot_(); break;
+          case 'sync': syncFromHoldDetail_(); updatePrices_(); snapshot_(); break;
           default: throw new Error('不明な操作: ' + action);
         }
       });
