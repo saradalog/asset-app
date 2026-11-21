@@ -77,6 +77,13 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .kv span:first-child{color:var(--sub)}
 .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--sub);border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px}
 @keyframes sp{to{transform:rotate(360deg)}}
+.todo{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}
+.todo:first-of-type{border-top:0}
+.todo input[type=checkbox]{width:20px;height:20px;margin-top:2px;flex:none;accent-color:var(--acc)}
+.todo .tt{font-weight:600}.todo.done .tt{text-decoration:line-through;color:var(--sub)}
+.todo .td{font-size:12px;color:var(--sub);margin-top:3px;line-height:1.5}
+.todo .ta{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
+
 .st{display:inline-block;font-size:12px;font-weight:700;border-radius:7px;padding:2px 8px}
 .st-ok{background:#123524;color:var(--pos)}.st-warn{background:#3a2f10;color:#f1c453}.st-bad{background:#3a1717;color:var(--neg)}.st-na{background:var(--card2);color:var(--sub)}
 .adv{padding:10px 0;border-top:1px solid var(--line)}.adv:first-of-type{border-top:0}
@@ -313,7 +320,7 @@ function renderHome(){
   let dayTxt = '';
   if (s.day !== 0) dayTxt = `<span class="${cls(s.day)}">${syen(s.day)}（${pct(s.day/(s.total - s.day),2)}）</span>`;
   else if (D.history.length >= 2) { const a = D.history[D.history.length-2].total, b = D.history[D.history.length-1].total; dayTxt = `<span class="${cls(b-a)}">${syen(b-a)}</span>`; }
-  $('#v-home').innerHTML = `
+  $('#v-home').innerHTML = todoCard() + `
     <div class="card">
       <div class="lbl">総資産</div>
       <div class="big">${yen(s.total)}</div>
@@ -344,6 +351,7 @@ function renderHome(){
     options:{maintainAspectRatio:false, interaction:{mode:'index',intersect:false}, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>` ${c.dataset.label} ${yen(c.raw)}`}}},
       scales:{x:{ticks:{maxTicksLimit:5, callback:function(v){ return this.getLabelForValue(v).slice(2).replace(/-/g,'/'); }}, grid:{display:false}}, y:yAxisMan}}});
   document.querySelectorAll('#segRange button').forEach(b => b.onclick = () => { homeRange = b.dataset.r; renderHome(); });
+  bindTodo();
 }
 
 let holdGroup = 'type';
@@ -654,6 +662,72 @@ function show(v){
 document.querySelectorAll('#nav button').forEach(b => b.onclick = () => show(b.dataset.v));
 $('#btnRefresh').onclick = () => busy($('#btnRefresh'), () => run('refresh', {}, '株価を更新しました'));
 
+
+
+/* ===== やること（設定シートの todos に JSON で保存。スマホ・PCで共通） ===== */
+const TODO_DEFAULT = [
+  {id:'t1', title:'積立先をオルカン1本にする', detail:'楽天証券の積立設定で、S&P500と日経平均の投信の積立を止め、その分をオルカンへ。持っている分は売らない。理由：中身の重なりと日本株への偏り（資産の約47%）を減らすため。点検ではS&P500は割高で要注意、オルカンは良好。', done:false},
+  {id:'t2', title:'インド株の新規購入をNifty50の1本にする', detail:'新しく買うのは「楽天・インド株Nifty50」だけ。iTrustインド株式はアクティブ運用で信託報酬が高め（購入画面で確認）なので追加しない。持っている分を売るかは損益と税金を見て決める。', done:false},
+  {id:'t3', title:'FIREの前提を厳しめにする（リターン4%・取り崩し3.5%）', detail:'各社の30年予想は実質3〜4%、取り崩しの安全圏は3〜3.5%。目標資産は年400万円÷3.5%＝約1.14億円になる。', apply:{returnRate:4, withdrawRate:3.5}, done:false},
+];
+function todos(){
+  const raw = (D.settings || {}).todos;
+  if (raw) { try { const a = typeof raw === 'string' ? JSON.parse(raw) : raw; if (Array.isArray(a)) return a; } catch(e) {} }
+  return JSON.parse(JSON.stringify(TODO_DEFAULT));
+}
+async function saveTodos(list, msg){
+  if (isDemo()) { D.settings.todos = JSON.stringify(list); renderHome(); return; }
+  await run('saveSettings', {todos: JSON.stringify(list)}, msg);
+}
+function todoCard(){
+  const list = todos(), left = list.filter(t => !t.done).length;
+  const items = list.map(t => `
+    <div class="todo ${t.done ? 'done' : ''}" data-id="${esc(t.id)}">
+      <input type="checkbox" ${t.done ? 'checked' : ''} aria-label="完了">
+      <div style="flex:1;min-width:0"><div class="tt">${esc(t.title)}</div>
+        ${t.detail ? `<div class="td">${esc(t.detail)}</div>` : ''}
+        ${t.done && t.doneAt ? `<div class="td">完了 ${esc(t.doneAt)}</div>` : ''}
+        <div class="ta">
+          ${t.apply && !t.done ? `<button class="btn sm" data-act="apply">この設定にする</button>` : ''}
+          <button class="btn sm ghost" data-act="del">削除</button>
+        </div></div>
+    </div>`).join('');
+  return `<div class="card" id="todoCard"><h3>やること <span class="lbl">残り${left}件</span></h3>
+    ${items || '<div class="empty">やることはありません</div>'}
+    <div style="margin-top:8px"><button class="btn sm ghost" id="todoAdd">＋ 追加</button></div></div>`;
+}
+function bindTodo(){
+  const card = $('#todoCard'); if (!card) return;
+  card.querySelectorAll('.todo').forEach(row => {
+    const id = row.dataset.id;
+    row.querySelector('input[type=checkbox]').onchange = async e => {
+      const list = todos(), t = list.find(x => x.id === id); if (!t) return;
+      t.done = e.target.checked; t.doneAt = t.done ? new Date().toLocaleDateString('ja-JP') : '';
+      await saveTodos(list, t.done ? '完了にしました' : '未完了に戻しました');
+    };
+    row.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
+      const list = todos(), i = list.findIndex(x => x.id === id); if (i < 0) return;
+      if (b.dataset.act === 'del') { if (!confirm('削除しますか？')) return; list.splice(i, 1); await saveTodos(list, '削除しました'); }
+      if (b.dataset.act === 'apply') {
+        const t = list[i];
+        await busy(b, async () => {
+          const ok = isDemo() ? (Object.assign(D.settings, t.apply), true) : await run('saveSettings', t.apply, '');
+          if (ok) { t.done = true; t.doneAt = new Date().toLocaleDateString('ja-JP'); await saveTodos(list, '設定を変えました'); }
+        });
+      }
+    });
+  });
+  $('#todoAdd').onclick = () => {
+    openDlg('やることを追加', `<form id="fTodo"><div class="f"><label>やること</label><input name="title" required></div>
+      <div class="f"><label>メモ（任意）</label><textarea name="detail" rows="3"></textarea></div>
+      <button class="btn" type="submit">追加</button></form>`);
+    $('#fTodo').onsubmit = async e => {
+      e.preventDefault(); const fd = new FormData(e.target);
+      const list = todos(); list.push({id:'t' + Date.now(), title:fd.get('title'), detail:fd.get('detail') || '', done:false});
+      closeDlg(); await saveTodos(list, '追加しました');
+    };
+  };
+}
 
 /* ===== 全資産の点検（GitHub Actions が毎月 asset_check/results/latest.json を更新） ===== */
 let CHECK = null, checkFilter = 'all';
