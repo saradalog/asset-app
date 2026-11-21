@@ -77,6 +77,12 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .kv span:first-child{color:var(--sub)}
 .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--sub);border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px}
 @keyframes sp{to{transform:rotate(360deg)}}
+.st{display:inline-block;font-size:12px;font-weight:700;border-radius:7px;padding:2px 8px}
+.st-ok{background:#123524;color:var(--pos)}.st-warn{background:#3a2f10;color:#f1c453}.st-bad{background:#3a1717;color:var(--neg)}.st-na{background:var(--card2);color:var(--sub)}
+.adv{padding:10px 0;border-top:1px solid var(--line)}.adv:first-of-type{border-top:0}
+.adv .t{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:600}
+.adv .b{font-size:12px;color:var(--sub);margin-top:4px;line-height:1.5}
+
 </style>
 </head>
 <body>
@@ -91,6 +97,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   <section id="v-hold"></section>
   <section id="v-div"></section>
   <section id="v-fire"></section>
+  <section id="v-check"></section>
   <section id="v-set"></section>
 </main>
 
@@ -99,6 +106,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   <button data-v="hold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>保有</button>
   <button data-v="div"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9 8l3 4 3-4M12 12v5M9 13h6M9 15.5h6"/></svg>配当</button>
   <button data-v="fire"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z"/></svg>FIRE</button>
+  <button data-v="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg>点検</button>
   <button data-v="set"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>設定</button>
 </nav>
 
@@ -115,7 +123,7 @@ const CAT = {
 const ACCOUNTS = ['特定','一般','NISA成長','NISAつみたて','iDeCo','その他'];
 const DEF_CUR = {jp:'JPY',us:'USD',hk:'HKD',fund:'JPY',crypto:'JPY',gold:'JPY',cash:'JPY',other:'JPY'};
 const CUR_SYM = {JPY:'¥',USD:'$',HKD:'HK$'};
-const TITLES = {home:'ホーム',hold:'保有資産',div:'配当',fire:'FIRE',set:'設定'};
+const TITLES = {home:'ホーム',hold:'保有資産',div:'配当',fire:'FIRE',check:'全資産の点検',set:'設定'};
 const LS_CFG='am_cfg', LS_CACHE='am_cache', LS_DEMO='am_demo';
 
 /* ===== ユーティリティ ===== */
@@ -645,6 +653,75 @@ function show(v){
 }
 document.querySelectorAll('#nav button').forEach(b => b.onclick = () => show(b.dataset.v));
 $('#btnRefresh').onclick = () => busy($('#btnRefresh'), () => run('refresh', {}, '株価を更新しました'));
+
+
+/* ===== 全資産の点検（GitHub Actions が毎月 asset_check/results/latest.json を更新） ===== */
+let CHECK = null, checkFilter = 'all';
+const ST_CLS = {'良好':'st-ok','続いている':'st-ok','要注意':'st-warn','薄れている':'st-warn','見直し':'st-bad','失われた':'st-bad'};
+const stBadge = t => `<span class="st ${ST_CLS[t] || 'st-na'}">${esc(t)}</span>`;
+const p1 = v => (v === null || v === undefined) ? '—' : (v > 0 ? '+' : '') + Number(v).toFixed(1) + '%';
+async function loadCheck(){
+  try {
+    const r = await fetch('asset_check/results/latest.json?t=' + Date.now(), {cache:'no-store'});
+    if (!r.ok) throw new Error(r.status);
+    CHECK = await r.json();
+  } catch (e) { CHECK = {error: String(e)}; }
+  renderCheck();
+}
+function renderCheck(){
+  const el = $('#v-check');
+  if (!CHECK) { el.innerHTML = '<div class="empty"><span class="spin"></span> 読み込み中…</div>'; return; }
+  if (CHECK.error) { el.innerHTML = '<div class="empty">点検結果を読み込めませんでした</div>'; return; }
+  const sg = CHECK.signals || {};
+  const adv = (CHECK.advantages || []).map(a => `
+    <div class="adv"><div class="t"><span>${esc(a.title)}</span>${stBadge(a.status)}</div>
+      <div class="b">${esc(a.basis)}</div>
+      <div class="b">基準：${esc(a.rule)}</div>
+      <div class="b">崩れたときの行動：${esc(a.action)}</div></div>`).join('');
+  const classes = [...new Set((CHECK.assets || []).map(a => a.cls))];
+  const segs = ['all', ...classes].map(c => `<button data-f="${esc(c)}" class="${checkFilter === c ? 'on' : ''}">${c === 'all' ? 'すべて' : esc(c)}</button>`).join('');
+  const rows = (CHECK.assets || []).filter(a => checkFilter === 'all' || a.cls === checkFilter).map(a => `
+    <div class="row" data-id="${esc(a.id)}" style="cursor:pointer">
+      <div class="l"><div class="nm">${esc(a.name)}</div>
+        <div class="meta">実質 ${p1(a.cagr_real_local)}／円建て10年 ${p1(a.jpy_10y)}／最大下落 ${p1(a.max_dd)}</div></div>
+      <div class="r">${stBadge(a.status || '—')}</div></div>`).join('');
+  el.innerHTML = `
+    <div class="card"><h3>優位性は続いているか <span class="lbl">データ末 ${esc(CHECK.data_end || '')}</span></h3>${adv}</div>
+    <div class="grid2">
+      <div class="card"><div class="lbl">米国株のCAPE</div><div class="mid">${sg.cape ?? '—'}</div><div class="sub">30倍超で割高</div></div>
+      <div class="card"><div class="lbl">株と債券の期待の差</div><div class="mid">${p1(sg.ecy)}</div><div class="sub">2%未満で株の優位が薄い</div></div>
+      <div class="card"><div class="lbl">米国債の実質利回り</div><div class="mid">${p1(sg.us_real_yield)}</div><div class="sub">日本10年 ${sg.jp_10y_yield ?? '—'}%</div></div>
+      <div class="card"><div class="lbl">金の割高度</div><div class="mid">${sg.gold_real_vs_median ?? '—'}倍</div><div class="sub">実質価格÷1971年以降の中央値</div></div>
+    </div>
+    <div class="card" style="margin-top:12px"><h3>資産ごとの判定</h3>
+      <div class="seg" id="chkSeg" style="flex-wrap:wrap;margin-bottom:8px">${segs}</div>${rows}
+      <div class="sub" style="margin-top:8px">行をタップすると詳しい数字と理由。判定は役割（値上がり・安定・備え・利回り・高リスク・現金）ごとの目安で、売買の指示ではありません。</div></div>
+    <div class="sub">毎月3日に自動更新（GitHub Actions）。更新 ${esc((CHECK.generated_at || '').replace('T',' ').replace('Z',' UTC'))}</div>`;
+  el.querySelectorAll('#chkSeg button').forEach(b => b.onclick = () => { checkFilter = b.dataset.f; renderCheck(); });
+  el.querySelectorAll('.row[data-id]').forEach(r => r.onclick = () => checkDetail(r.dataset.id));
+}
+function checkDetail(id){
+  const a = (CHECK.assets || []).find(x => x.id === id); if (!a) return;
+  const kv = (k, v) => `<div class="kv"><span>${k}</span><span class="num">${v}</span></div>`;
+  openDlg(a.name, `
+    <div style="margin-bottom:10px">${stBadge(a.status || '—')} <span class="lbl">${esc(a.cls)}・役割：${esc({growth:'値上がり',stable:'安定・分散',hedge:'備え',income:'利回り',speculative:'高リスク高リターン',cash:'現金'}[a.role] || a.role)}</span></div>
+    <div class="sub" style="margin-bottom:10px">${esc((a.reasons || []).join('／'))}</div>
+    ${kv('データ', `${esc(a.start || '—')}〜（${a.years ?? '—'}年）`)}
+    ${kv('実質年率（その資産の通貨）', p1(a.cagr_real_local))}
+    ${kv('円建て年率 1年／5年／10年', `${p1(a.jpy_1y)}／${p1(a.jpy_5y)}／${p1(a.jpy_10y)}`)}
+    ${kv('ぶれ（年率）', p1(a.vol).replace('+',''))}
+    ${kv('最大下落（円建て）', `${p1(a.max_dd)}（${p1(a.max_dd_jpy)}）`)}
+    ${kv('最悪の12か月', p1(a.worst_12m))}
+    ${kv('高値を取り戻すまでの最長', `${a.longest_under_years ?? '—'}年（${esc(a.under_from || '')}〜${esc(a.under_to || '')}）`)}
+    ${kv('10年持って実質マイナスだった割合', a.neg10_share == null ? '—' : a.neg10_share + '%')}
+    ${kv('米国株との相関（全期間／3年）', `${a.corr_us ?? '—'}／${a.corr_us_3y ?? '—'}`)}
+    ${kv('株が月5%以上下げた月の平均', p1(a.crash_avg))}
+    ${kv('データ元', esc(a.source || '—'))}
+    ${a.note ? `<div class="sub" style="margin-top:8px">${esc(a.note)}</div>` : ''}`);
+}
+const _show = show;
+show = function(v){ _show(v); if (v === 'check' && !CHECK) loadCheck(); };
+document.querySelectorAll('#nav button').forEach(b => b.onclick = () => show(b.dataset.v));
 
 /* ===== 起動 ===== */
 (async function init(){

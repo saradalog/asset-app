@@ -1,0 +1,44 @@
+# 全資産の定期点検：毎月データを取得して指標と判定を計算し、asset_check/results に保存する
+# 結果は Claude の定期タスクが読み、ダッシュボードに反映する
+name: Asset Check Monthly
+
+on:
+  schedule:
+    - cron: "23 0 3 * *"   # 毎月3日 09:23 JST
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "asset_check/run.py"
+      - ".github/workflows/asset-check.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: asset-check
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests pandas numpy yfinance lxml
+      - name: 点検を実行
+        run: python asset_check/run.py
+      - name: 結果を保存
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add asset_check/results
+          if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
+          git commit -m "全資産の定期点検：結果を更新（$(date -u +%Y-%m-%d)）"
+          for i in 1 2 3; do
+            git pull --rebase origin main && git push && break
+            sleep 5
+          done
