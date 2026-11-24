@@ -321,33 +321,25 @@ function fetchYahoo_(keys) {
   return out;
 }
 
-/* JSONの中から nav を持つ最初のオブジェクトを探す（APIの入れ物の形が変わっても読めるように） */
-function findNav_(o) {
-  if (!o || typeof o !== 'object') return null;
-  if (!Array.isArray(o) && o.nav !== undefined) return o;
-  const vals = Array.isArray(o) ? o : Object.keys(o).map(k => o[k]);
-  for (let i = 0; i < vals.length; i++) { const f = findNav_(vals[i]); if (f) return f; }
-  return null;
-}
-
-/* 三菱UFJアセットマネジメントの公式API（ファンド情報）で基準価額を取得。key は 'MUFG:協会コード' */
+/* 投資信託（eMAXIS）の基準価額。key は 'MUFG:協会コード'
+ * 三菱UFJアセットマネジメントの公式APIは Apps Script からのアクセスを弾く（CloudFrontの403）ため、
+ * GitHub Actions（asset-app リポジトリの fund-nav.yml）が取ってきた fund-nav.json を読む。
+ * 新しいeMAXISを買ったら、リポジトリの fund-codes.txt に協会コードを足す。 */
+const FUND_NAV_URL = 'https://raw.githubusercontent.com/saradalog/asset-app/main/fund-nav.json';
 function fetchMufg_(keys) {
   const out = {};
   if (!keys.length) return out;
-  const reqs = keys.map(k => ({
-    url: 'https://developer.am.mufg.jp/fund_information_latest/association_fund_cd/' + encodeURIComponent(k.slice(5)),
-    muteHttpExceptions: true,
-  }));
-  let resps = [];
-  try { resps = UrlFetchApp.fetchAll(reqs); } catch (e) { Logger.log('三菱UFJ AM API取得失敗: ' + e); return out; }
-  resps.forEach((r, i) => {
-    try {
-      if (r.getResponseCode() !== 200) { Logger.log('三菱UFJ AM API ' + keys[i] + ': ' + r.getResponseCode()); return; }
-      const v = findNav_(JSON.parse(r.getContentText())) || {};
-      const nav = Number(String(v.nav).replace(/,/g, '')) || 0;
-      const cmp = Number(String(v.cmp_prev_day || '').replace(/,/g, '')) || 0;
-      if (nav > 0) out[keys[i]] = { price: nav, prev: cmp ? nav - cmp : 0 };
-    } catch (e) { Logger.log('三菱UFJ AM API 解析失敗 ' + keys[i] + ': ' + e); }
+  let navs = {};
+  try {
+    const r = UrlFetchApp.fetch(FUND_NAV_URL + '?t=' + Date.now(), { muteHttpExceptions: true });
+    if (r.getResponseCode() !== 200) { Logger.log('fund-nav.json 取得失敗: ' + r.getResponseCode()); return out; }
+    navs = JSON.parse(r.getContentText()).navs || {};
+  } catch (e) { Logger.log('fund-nav.json 取得失敗: ' + e); return out; }
+  keys.forEach(k => {
+    const v = navs[k.slice(5)];
+    if (!v) { Logger.log('fund-nav.json に無い協会コード（fund-codes.txt に足してください）: ' + k.slice(5)); return; }
+    const nav = Number(v.nav) || 0;
+    if (nav > 0) out[k] = { price: nav, prev: Number(v.prev) || 0 };
   });
   return out;
 }
