@@ -401,11 +401,11 @@ const TYPE_HINT = {
   jp:{code:'証券コード（例 7203）', qty:'株数', cost:'取得単価（円）', price:'空欄なら自動取得'},
   us:{code:'ティッカー（例 AAPL、VOO）', qty:'株数', cost:'取得単価（ドル）', price:'空欄なら自動取得'},
   hk:{code:'銘柄コード（例 0700）', qty:'株数', cost:'取得単価（香港ドル）', price:'空欄なら自動取得'},
-  fund:{code:'任意（協会コードなど）', qty:'保有口数（口）', cost:'平均取得単価（1万口あたり・円）', price:'基準価額（1万口あたり）を入力。投信は自動取得なし'},
+  fund:{code:'協会コード（8桁・例 0331418A）', qty:'保有口数（口）', cost:'平均取得単価（1万口あたり・円）', price:'eMAXISシリーズは協会コードを入れて空欄にすると自動取得。それ以外は基準価額（1万口あたり）を入力'},
   crypto:{code:'通貨記号（例 BTC、ETH）', qty:'数量', cost:'取得単価（円）', price:'空欄なら自動取得'},
   gold:{code:'任意', qty:'グラム数', cost:'取得単価（円/g）', price:'空欄なら国際金価格から自動計算（円/g・税抜）'},
   cash:{code:'任意', qty:'金額', cost:'不要', price:'不要'},
-  other:{code:'任意', qty:'数量', cost:'取得単価', price:'現在の単価を入力'},
+  other:{code:'任意（Yahoo Financeのティッカー 例 Z59.SI を入れると自動取得）', qty:'数量', cost:'取得単価（円）', price:'ティッカーを入れたら空欄でOK（円に換算して取得）。無ければ現在の単価を入力'},
 };
 function openHolding(id){
   const h = D.holdings.find(x => String(x.id) === String(id)) || {type:'jp', account:'特定', currency:'JPY'};

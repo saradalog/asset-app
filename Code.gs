@@ -197,6 +197,10 @@ function tickerOf_(h) {
     case 'us': return code;
     case 'hk': return 'HKG:' + code.replace(/^0+/, '').padStart(4, '0');
     case 'crypto': return 'CURRENCY:' + code + 'JPY';
+    // 投資信託：協会コード（8桁）を入れると、三菱UFJアセットマネジメントの公式APIで基準価額を取る（eMAXISシリーズ）
+    case 'fund': return /^[0-9A-Z]{8}$/.test(code) ? 'MUFG:' + code : null;
+    // その他：Yahoo Financeのティッカー（例 Z59.SI）を入れると自動取得。現地通貨の価格を円に直して入れる
+    case 'other': return /[.=^]/.test(code) ? 'YH:' + code : null;
     default: return null;
   }
 }
@@ -210,11 +214,26 @@ function updatePrices_() {
     if (t && !reqs.some(r => r[0] === t)) reqs.push([t, t]);
   });
 
-  // 1) Yahoo Finance から取得（日本株・暗号資産・為替・金はこちらが主）
-  const res = fetchYahoo_(reqs.map(r => r[0]));
+  // 0) 投資信託（eMAXIS）は三菱UFJアセットマネジメントの公式APIから
+  const res = fetchMufg_(reqs.map(r => r[0]).filter(k => k.indexOf('MUFG:') === 0));
+
+  // 1) Yahoo Finance から取得（日本株・暗号資産・為替・金・海外株はこちらが主）
+  Object.assign(res, fetchYahoo_(reqs.map(r => r[0]).filter(k => k.indexOf('MUFG:') !== 0)));
+
+  // 1b) Yahoo のティッカー指定（YH:）は現地通貨なので円に直す
+  const curs = {};
+  Object.keys(res).forEach(k => { if (k.indexOf('YH:') === 0 && res[k].cur && res[k].cur !== 'JPY') curs[res[k].cur] = 1; });
+  const fxKeys = Object.keys(curs).map(c => 'FX:' + c);
+  const fxRes = fxKeys.length ? fetchYahoo_(fxKeys) : {};
+  Object.keys(res).forEach(k => {
+    if (k.indexOf('YH:') !== 0 || !res[k].cur || res[k].cur === 'JPY') return;
+    const f = fxRes['FX:' + res[k].cur];
+    if (f && f.price) { res[k] = { price: res[k].price * f.price, prev: res[k].prev ? res[k].prev * f.price : 0 }; }
+    else delete res[k];
+  });
 
   // 2) Yahoo で取れなかったものだけ GOOGLEFINANCE で補完
-  const rest = reqs.filter(r => !(res[r[0]] && res[r[0]].price) && r[1].indexOf('TYO:') !== 0);
+  const rest = reqs.filter(r => !(res[r[0]] && res[r[0]].price) && !/^(TYO|YH|MUFG):/.test(r[1]));
   if (rest.length) {
     let sh = ss_().getSheetByName('_calc');
     if (!sh) { sh = ss_().insertSheet('_calc'); sh.hideSheet(); }
@@ -275,6 +294,8 @@ function yahooSymbol_(key) {
   if (key === 'FX_USD') return 'USDJPY=X';
   if (key === 'FX_HKD') return 'HKDJPY=X';
   if (key === 'GOLD') return 'GC=F';
+  if (key.indexOf('FX:') === 0) return key.slice(3) + 'JPY=X';
+  if (key.indexOf('YH:') === 0) return key.slice(3);
   if (key.indexOf('TYO:') === 0) return key.slice(4) + '.T';
   if (key.indexOf('HKG:') === 0) return key.slice(4) + '.HK';
   if (key.indexOf('CURRENCY:') === 0) return key.slice(9, -3) + '-' + key.slice(-3);
@@ -294,8 +315,39 @@ function fetchYahoo_(keys) {
       const meta = JSON.parse(r.getContentText()).chart.result[0].meta;
       const price = Number(meta.regularMarketPrice) || 0;
       const prev = Number(meta.chartPreviousClose || meta.previousClose) || 0;
-      if (price > 0) out[keys[i]] = { price: price, prev: prev };
+      if (price > 0) out[keys[i]] = { price: price, prev: prev, cur: meta.currency || '' };
     } catch (e) {}
+  });
+  return out;
+}
+
+/* JSONの中から nav を持つ最初のオブジェクトを探す（APIの入れ物の形が変わっても読めるように） */
+function findNav_(o) {
+  if (!o || typeof o !== 'object') return null;
+  if (!Array.isArray(o) && o.nav !== undefined) return o;
+  const vals = Array.isArray(o) ? o : Object.keys(o).map(k => o[k]);
+  for (let i = 0; i < vals.length; i++) { const f = findNav_(vals[i]); if (f) return f; }
+  return null;
+}
+
+/* 三菱UFJアセットマネジメントの公式API（ファンド情報）で基準価額を取得。key は 'MUFG:協会コード' */
+function fetchMufg_(keys) {
+  const out = {};
+  if (!keys.length) return out;
+  const reqs = keys.map(k => ({
+    url: 'https://developer.am.mufg.jp/fund_information_latest/association_fund_cd/' + encodeURIComponent(k.slice(5)),
+    muteHttpExceptions: true,
+  }));
+  let resps = [];
+  try { resps = UrlFetchApp.fetchAll(reqs); } catch (e) { Logger.log('三菱UFJ AM API取得失敗: ' + e); return out; }
+  resps.forEach((r, i) => {
+    try {
+      if (r.getResponseCode() !== 200) { Logger.log('三菱UFJ AM API ' + keys[i] + ': ' + r.getResponseCode()); return; }
+      const v = findNav_(JSON.parse(r.getContentText())) || {};
+      const nav = Number(String(v.nav).replace(/,/g, '')) || 0;
+      const cmp = Number(String(v.cmp_prev_day || '').replace(/,/g, '')) || 0;
+      if (nav > 0) out[keys[i]] = { price: nav, prev: cmp ? nav - cmp : 0 };
+    } catch (e) { Logger.log('三菱UFJ AM API 解析失敗 ' + keys[i] + ': ' + e); }
   });
   return out;
 }
