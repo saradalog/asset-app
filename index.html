@@ -389,7 +389,7 @@ function holdRow(it, total){
   else if (isAmountMode(h)) meta = `${esc(where)}${where ? '・' : ''}金額で入力`;
   else {
     const unit = h.type === 'fund' ? '口' : h.type === 'gold' ? 'g' : h.type === 'crypto' ? '' : '株';
-    meta = `${where ? esc(where) + '・' : ''}${esc(h.code)} ${fmtN(h.qty, 8)}${unit}・${sym}${fmtN(it.price)}${num(h.manualPrice) > 0 ? '<span class="badge">手動</span>' : ''}${!it.price ? '<span class="badge" style="color:var(--neg)">価格なし</span>' : ''}`;
+    meta = `${where ? esc(where) + '・' : ''}${esc(h.code)} ${fmtN(h.qty, 8)}${unit}・${sym}${fmtN(it.price)}${num(h.manualPrice) > 0 ? '<span class="badge">手動</span>' : (h.type === 'fund' && h.code ? '<span class="badge">推定</span>' : '')}${!it.price ? '<span class="badge" style="color:var(--neg)">価格なし</span>' : ''}`;
   }
   return `<div class="row" data-hid="${esc(h.id)}">
     <div class="l"><div class="nm">${esc(h.name || h.code)}${h.account && h.account !== 'その他' ? `<span class="badge">${esc(h.account)}</span>` : ''}</div><div class="meta">${meta}</div></div>
@@ -401,7 +401,7 @@ const TYPE_HINT = {
   jp:{code:'証券コード（例 7203）', qty:'株数', cost:'取得単価（円）', price:'空欄なら自動取得'},
   us:{code:'ティッカー（例 AAPL、VOO）', qty:'株数', cost:'取得単価（ドル）', price:'空欄なら自動取得'},
   hk:{code:'銘柄コード（例 0700）', qty:'株数', cost:'取得単価（香港ドル）', price:'空欄なら自動取得'},
-  fund:{code:'協会コード（8桁・例 0331418A）', qty:'保有口数（口）', cost:'平均取得単価（1万口あたり・円）', price:'eMAXISシリーズは協会コードを入れて空欄にすると自動取得。それ以外は基準価額（1万口あたり）を入力'},
+  fund:{code:'協会コード（8桁・例 0331418A）', qty:'保有口数（口）', cost:'平均取得単価（1万口あたり・円）', price:'協会コードを入れて空欄にすると、毎日推定（週1回正確な値に修正）。スプレッドシートの「基準価額推定」シートに行が必要'},
   crypto:{code:'通貨記号（例 BTC、ETH）', qty:'数量', cost:'取得単価（円）', price:'空欄なら自動取得'},
   gold:{code:'任意', qty:'グラム数', cost:'取得単価（円/g）', price:'空欄なら国際金価格から自動計算（円/g・税抜）'},
   cash:{code:'任意', qty:'金額', cost:'不要', price:'不要'},

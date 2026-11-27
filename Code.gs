@@ -23,6 +23,10 @@ const SCHEMA = {
     ['date', '日付'], ['total', '総資産'], ['cost', '取得額'], ['jp', '日本株'], ['us', '米国株'],
     ['hk', '中国株'], ['fund', '投資信託'], ['crypto', '暗号資産'], ['gold', '金'], ['cash', '現金'], ['other', 'その他']] },
   settings: { name: '設定', text: [1], cols: [['key', '項目'], ['value', '値']] },
+  // 投資信託の基準価額の推定。週1回、正確な基準価額（基準日・基準価額）を入れ直し、平日は代理指標の値動きで推定する
+  navest: { name: '基準価額推定', text: [1, 3, 4, 6], cols: [
+    ['code', '協会コード'], ['name', 'ファンド名'], ['proxy', '代理指標(Yahoo)'], ['fx', '通貨'], ['lag', '現地前日(1/0)'],
+    ['anchorDate', '基準日(正確)'], ['anchorNav', '基準価額(正確)'], ['estNav', '推定基準価額'], ['estAt', '推定日時'], ['note', 'メモ']] },
 };
 
 const DEFAULT_SETTINGS = { expense: 3000000, withdrawRate: 4, target: '', monthly: 100000, returnRate: 5, age: '' };
@@ -197,8 +201,8 @@ function tickerOf_(h) {
     case 'us': return code;
     case 'hk': return 'HKG:' + code.replace(/^0+/, '').padStart(4, '0');
     case 'crypto': return 'CURRENCY:' + code + 'JPY';
-    // 投資信託：協会コード（8桁）を入れると、三菱UFJアセットマネジメントの公式APIで基準価額を取る（eMAXISシリーズ）
-    case 'fund': return /^[0-9A-Z]{8}$/.test(code) ? 'MUFG:' + code : null;
+    // 投資信託：協会コード（8桁）。「基準価額推定」シートの正確な値と代理指標の値動きから推定する
+    case 'fund': return /^[0-9A-Z]{8}$/.test(code) ? 'FUND:' + code : null;
     // その他：Yahoo Financeのティッカー（例 Z59.SI）を入れると自動取得。現地通貨の価格を円に直して入れる
     case 'other': return /[.=^]/.test(code) ? 'YH:' + code : null;
     default: return null;
@@ -214,11 +218,11 @@ function updatePrices_() {
     if (t && !reqs.some(r => r[0] === t)) reqs.push([t, t]);
   });
 
-  // 0) 投資信託（eMAXIS）は三菱UFJアセットマネジメントの公式APIから
-  const res = fetchMufg_(reqs.map(r => r[0]).filter(k => k.indexOf('MUFG:') === 0));
+  // 0) 投資信託は「基準価額推定」シートから推定
+  const res = fetchFundEst_(reqs.map(r => r[0]).filter(k => k.indexOf('FUND:') === 0));
 
   // 1) Yahoo Finance から取得（日本株・暗号資産・為替・金・海外株はこちらが主）
-  Object.assign(res, fetchYahoo_(reqs.map(r => r[0]).filter(k => k.indexOf('MUFG:') !== 0)));
+  Object.assign(res, fetchYahoo_(reqs.map(r => r[0]).filter(k => k.indexOf('FUND:') !== 0)));
 
   // 1b) Yahoo のティッカー指定（YH:）は現地通貨なので円に直す
   const curs = {};
@@ -233,7 +237,7 @@ function updatePrices_() {
   });
 
   // 2) Yahoo で取れなかったものだけ GOOGLEFINANCE で補完
-  const rest = reqs.filter(r => !(res[r[0]] && res[r[0]].price) && !/^(TYO|YH|MUFG):/.test(r[1]));
+  const rest = reqs.filter(r => !(res[r[0]] && res[r[0]].price) && !/^(TYO|YH|FUND):/.test(r[1]));
   if (rest.length) {
     let sh = ss_().getSheetByName('_calc');
     if (!sh) { sh = ss_().insertSheet('_calc'); sh.hideSheet(); }
@@ -321,27 +325,84 @@ function fetchYahoo_(keys) {
   return out;
 }
 
-/* 投資信託（eMAXIS）の基準価額。key は 'MUFG:協会コード'
- * 三菱UFJアセットマネジメントの公式APIは Apps Script からのアクセスを弾く（CloudFrontの403）ため、
- * GitHub Actions（asset-app リポジトリの fund-nav.yml）が取ってきた fund-nav.json を読む。
- * 新しいeMAXISを買ったら、リポジトリの fund-codes.txt に協会コードを足す。 */
-const FUND_NAV_URL = 'https://raw.githubusercontent.com/saradalog/asset-app/main/fund-nav.json';
-function fetchMufg_(keys) {
+/* ---------- 投資信託の基準価額の推定 ----------
+ * 運用会社のサイトやAPIはクラウド（Apps Script・GitHub）からのアクセスを弾くため、
+ * 「基準価額推定」シートに週1回入れる正確な基準価額（基準日・基準価額）を起点に、
+ * 代理指標（Yahoo Financeの指数・ETF）と為替の変化率を掛けて毎日の基準価額を推定する。
+ *   推定 = 正確な基準価額 × (代理指標の今 / 基準日の代理指標) × (為替の今 / 基準日の為替)
+ *   現地前日=1 の行（海外資産）は、基準日の前営業日の終値を基準日の値として使う（基準価額は現地前日の終値で計算されるため）
+ * key は 'FUND:協会コード' */
+function fetchFundEst_(keys) {
   const out = {};
   if (!keys.length) return out;
-  let navs = {};
+  const rows = readRows_('navest');
+  const need = {};
+  rows.forEach(r => { if (r.proxy) need[r.proxy] = 1; if (r.fx && r.fx !== 'JPY') need[r.fx + 'JPY=X'] = 1; });
+  const hist = fetchYahooHist_(Object.keys(need));
+  const sh = sheet_('navest'), now = nowStr_();
+  rows.forEach(r => {
+    const code = String(r.code).trim().toUpperCase();
+    const key = 'FUND:' + code;
+    const nav0 = Number(r.anchorNav) || 0;
+    const d0 = String(r.anchorDate || '').replace(/\//g, '-');
+    if (!nav0 || !d0) return;
+    const lag = Number(r.lag) === 1;
+    const useFx = r.fx && r.fx !== 'JPY';
+    const p = hist[r.proxy], f = useFx ? hist[r.fx + 'JPY=X'] : null;
+    let est = nav0, prev = 0;
+    if (p && (!useFx || f)) {
+      const pA = closeAt_(p, d0, lag), fA = useFx ? closeAt_(f, d0, lag) : 1;
+      if (pA && fA) {
+        est = nav0 * (p.last / pA) * (useFx ? f.last / fA : 1);
+        prev = nav0 * (p.prev / pA) * (useFx ? f.prev / fA : 1);
+      }
+    } else Logger.log('代理指標が取れないので基準価額は正確な値のまま: ' + code + ' ' + r.proxy);
+    est = Math.round(est); prev = Math.round(prev);
+    out[key] = { price: est, prev: prev };
+    const row = findRow_('navest', code);
+    if (row > 0) sh.getRange(row, 8, 1, 2).setValues([[est, now]]);
+  });
+  keys.filter(k => !out[k]).forEach(k => Logger.log('「基準価額推定」シートに無い協会コード: ' + k.slice(5)));
+  return out;
+}
+
+/* Yahoo Finance から直近3か月の日足（取引所の日付）を取る */
+function fetchYahooHist_(symbols) {
+  const out = {};
+  if (!symbols.length) return out;
+  let resps = [];
   try {
-    const r = UrlFetchApp.fetch(FUND_NAV_URL + '?t=' + Date.now(), { muteHttpExceptions: true });
-    if (r.getResponseCode() !== 200) { Logger.log('fund-nav.json 取得失敗: ' + r.getResponseCode()); return out; }
-    navs = JSON.parse(r.getContentText()).navs || {};
-  } catch (e) { Logger.log('fund-nav.json 取得失敗: ' + e); return out; }
-  keys.forEach(k => {
-    const v = navs[k.slice(5)];
-    if (!v) { Logger.log('fund-nav.json に無い協会コード（fund-codes.txt に足してください）: ' + k.slice(5)); return; }
-    const nav = Number(v.nav) || 0;
-    if (nav > 0) out[k] = { price: nav, prev: Number(v.prev) || 0 };
+    resps = UrlFetchApp.fetchAll(symbols.map(sym => ({
+      url: 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(sym) + '?range=3mo&interval=1d',
+      muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' },
+    })));
+  } catch (e) { Logger.log('Yahoo取得失敗: ' + e); return out; }
+  resps.forEach((r, i) => {
+    try {
+      if (r.getResponseCode() !== 200) { Logger.log('Yahoo ' + symbols[i] + ': ' + r.getResponseCode()); return; }
+      const res = JSON.parse(r.getContentText()).chart.result[0];
+      const tz = res.meta.exchangeTimezoneName || 'UTC';
+      const closes = (res.indicators.quote[0].close || []);
+      const pts = [];
+      (res.timestamp || []).forEach((t, j) => {
+        if (closes[j] != null) pts.push({ d: Utilities.formatDate(new Date(t * 1000), tz, 'yyyy-MM-dd'), c: closes[j] });
+      });
+      if (!pts.length) return;
+      const last = Number(res.meta.regularMarketPrice) || pts[pts.length - 1].c;
+      const prev = pts.length >= 2 ? pts[pts.length - 2].c : pts[pts.length - 1].c;
+      out[symbols[i]] = { pts: pts, last: last, prev: prev };
+    } catch (e) { Logger.log('Yahoo ' + symbols[i] + ' 解析失敗: ' + e); }
   });
   return out;
+}
+
+/* 基準日 d0 の値：lag なら d0 より前の最後の終値、そうでなければ d0 以前の最後の終値 */
+function closeAt_(h, d0, lag) {
+  for (let i = h.pts.length - 1; i >= 0; i--) {
+    const d = h.pts[i].d;
+    if (lag ? d < d0 : d <= d0) return h.pts[i].c;
+  }
+  return 0;
 }
 
 /* ---------- 資産推移の記録 ---------- */
